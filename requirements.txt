@@ -1,0 +1,10 @@
+pymupdf>=1.24
+numpy
+pillow
+pytesseract      # optional: --ocr (also needs the tesseract binary: brew install tesseract / apt install tesseract-ocr)
+# for eval/parsers.py (optional)
+pdfplumber
+pypdf
+pymupdf4llm
+# docling        # heavy; install if you want it in the parser comparison
+pytest

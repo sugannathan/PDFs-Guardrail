@@ -1,0 +1,20 @@
+[project]
+name = "pdfguard"
+version = "0.1.0"
+description = "Detects prompt injection and hidden content in scientific PDFs before they reach LLM pipelines."
+requires-python = ">=3.10"
+dependencies = ["pymupdf>=1.24", "numpy", "pillow"]
+
+[project.optional-dependencies]
+ocr = ["pytesseract"]
+eval = ["pdfplumber", "pypdf", "pymupdf4llm", "pytest"]
+
+[project.scripts]
+pdfguard = "pdfguard.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["pdfguard"]
