@@ -121,15 +121,21 @@ def _llm_request(snippet: str, context: str) -> dict | None:
             out = json.load(urllib.request.urlopen(req, timeout=60))
             text = "".join(b.get("text", "") for b in out.get("content", []))
         else:
-            # Any OpenAI-compatible endpoint: OpenAI, or a local Ollama / LM Studio / vLLM server.
-            url = os.environ.get("PDFGUARD_LLM_URL", "https://api.openai.com/v1") .rstrip("/") + "/chat/completions"
-            key = os.environ.get("OPENAI_API_KEY", "local")
-            if "api.openai.com" in url and key == "local":
-                return None
-            body = {"model": model or "gpt-4o-mini", "temperature": 0,
+            # OpenAI-compatible endpoints: Cerebras, OpenAI, or any custom URL.
+            if os.environ.get("CEREBRAS_API_KEY") and not os.environ.get("PDFGUARD_LLM_URL"):
+                base, key, default_model = "https://api.cerebras.ai/v1", os.environ["CEREBRAS_API_KEY"], "gpt-oss-120b"
+            else:
+                base = os.environ.get("PDFGUARD_LLM_URL", "https://api.openai.com/v1")
+                key = os.environ.get("PDFGUARD_LLM_KEY") or os.environ.get("OPENAI_API_KEY", "")
+                default_model = "gpt-4o-mini"
+                if "api.openai.com" in base and not key:
+                    return None
+            url = base.rstrip("/") + "/chat/completions"
+            body = {"model": model or default_model, "temperature": 0,
                     "messages": [{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": user}]}
             req = urllib.request.Request(url, data=json.dumps(body).encode(),
-                                         headers={"Authorization": f"Bearer {key}", "content-type": "application/json"})
+                                         headers={"Authorization": f"Bearer {key}", "content-type": "application/json",
+                                                  "User-Agent": "pdfguard/0.1"})
             out = json.load(urllib.request.urlopen(req, timeout=120))
             text = out["choices"][0]["message"]["content"]
         m = re.search(r"\{.*\}", text, re.DOTALL)

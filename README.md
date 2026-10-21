@@ -134,11 +134,23 @@ Example output:
 
 ### LLM options
 
+We use [Cerebras inference](https://cloud.cerebras.ai) for fast labelling:
+
+```bash
+export CEREBRAS_API_KEY=csk-...
+export PDFGUARD_MODEL=gpt-oss-120b        # optional, this is the default
+python -m pdfguard llm-check               # sends one test snippet
+python -m pdfguard scan paper.pdf --llm
+```
+
+Other providers:
+
 | Variable | Effect |
 |---|---|
+| `CEREBRAS_API_KEY` | Use Cerebras (`https://api.cerebras.ai/v1`) |
 | `ANTHROPIC_API_KEY` | Use the Anthropic API |
 | `OPENAI_API_KEY` | Use the OpenAI API |
-| `PDFGUARD_LLM_URL` | Any OpenAI-compatible endpoint, e.g. a local Ollama server: `http://localhost:11434/v1` |
+| `PDFGUARD_LLM_URL` + `PDFGUARD_LLM_KEY` | Any other OpenAI-compatible endpoint |
 | `PDFGUARD_MODEL` | Model name for whichever provider is used |
 
 If no LLM is reachable, PDFGuard keeps the heuristic labels and notes the error in the finding.
