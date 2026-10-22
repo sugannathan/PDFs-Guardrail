@@ -243,8 +243,8 @@ PDFGuard only reads PDFs and never changes the original file. The attack generat
 
 ## Team
 
-- **Sugan Kanagasenthinathan** – sugan.kanagasenthinathan@dlr.de
-- **Prakul Pandit** – prakul.pandit@dlr.de
+- **Sugan Kanagasenthinathan** – sugan5832@gmail.com
+- **Prakul Pandit** – prakulp18@live.com
 - **Fawad Ahmed Baig** – fawadahmedbaig10@gmail.com
 
 ## Citation
