@@ -6,8 +6,10 @@
 
 Built at the [Open Scientific Intelligence (OSI) Hackathon 2026](https://llmhackathon.github.io/) · Knowledge Extraction and Reasoning
 
+   **Available on PyPI:** [pdfguardrail](https://pypi.org/project/pdfguardrail/)
+
 ```bash
-pip install pdfguardrail
+   pip install pdfguardrail
 ```
 
 ```python
@@ -56,6 +58,8 @@ PDFGuard checks a paper in four steps before any of its text reaches an LLM.
 Detection never depends on the LLM. Without it, PDFGuard still finds everything and marks unclear findings for review.
 
 ## Install
+
+   PDFGuard is published on PyPI as [`pdfguardrail`](https://pypi.org/project/pdfguardrail/).
 
 ```bash
 pip install pdfguardrail                 # detection with rule-based labels
