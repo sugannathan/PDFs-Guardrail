@@ -28,19 +28,46 @@ def _load_dotenv() -> None:
 
     Values already set in the environment win.
     """
-    for env in (Path.cwd() / "secrets.env", Path.cwd() / ".env",
-                Path(__file__).resolve().parents[1] / "secrets.env", Path(__file__).resolve().parents[1] / ".env"):
+    candidates = (
+        Path.cwd() / "secrets.env",
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[1] / "secrets.env",
+        Path(__file__).resolve().parents[1] / ".env",
+    )
+    
+    # Try using python-dotenv if installed
+    has_dotenv = False
+    try:
+        from dotenv import load_dotenv
+        has_dotenv = True
+    except ImportError:
+        pass
+
+    for env in candidates:
         if not env.is_file():
             continue
-        for line in env.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key, value = key.strip(), value.strip().strip('"').strip("'")
-            if key and value and key not in os.environ:
-                os.environ[key] = value
-        return
+        if has_dotenv:
+            try:
+                load_dotenv(dotenv_path=env, override=False)
+            except Exception:
+                pass
+        # Manual parsing fallback / complement
+        try:
+            for line in env.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key, value = key.strip(), value.strip().strip('"').strip("'")
+                if key and value and key not in os.environ:
+                    os.environ[key] = value
+        except Exception:
+            pass
+
+
+def reload() -> None:
+    """Reload environment variables from secrets.env / .env."""
+    _load_dotenv()
 
 
 _load_dotenv()

@@ -39,6 +39,9 @@ def samples():
 
 @pytest.mark.parametrize("name,risk", EXPECTED.items())
 def test_risk(name, risk):
+    from pdfguard import checks
+    if name == "15_scanned_ocr_layer_benign" and checks.ocr_status():
+        pytest.skip(f"OCR not available: {checks.ocr_status()}")
     assert scan(SAMPLES / f"{name}.pdf", use_ocr=True, use_llm=False).risk == risk
 
 
@@ -77,12 +80,15 @@ def test_no_key_in_code():
     import re
     root = Path(__file__).resolve().parents[1]
     for py in root.rglob("*.py"):
-        assert not re.search(r"csk-[A-Za-z0-9]{20,}", py.read_text()), py
+        if "venv" in py.parts or ".tmp" in py.parts:
+            continue
+        assert not re.search(r"csk-[A-Za-z0-9]{20,}", py.read_text(encoding="utf-8", errors="ignore")), py
 
 
 def test_local_provider_uses_local_generate(monkeypatch):
     monkeypatch.setenv("PDFGUARD_PROVIDER", "local")
-    from pdfguard import local
+    from pdfguard import config, local
+    monkeypatch.setattr(config, "local_runtime_installed", lambda: True)
     monkeypatch.setattr(local, "generate", lambda *a, **k: '{"label": "injection", "confidence": 0.9, "explanation": "x"}')
     r = scan(SAMPLES / "03_off_page.pdf", use_llm=True)
     assert r.findings[0].method == "llm" and r.findings[0].details["llm_label"] == "injection"
@@ -90,7 +96,8 @@ def test_local_provider_uses_local_generate(monkeypatch):
 
 def test_plain_text_answer_is_parsed(monkeypatch):
     monkeypatch.setenv("PDFGUARD_PROVIDER", "local")
-    from pdfguard import local
+    from pdfguard import config, local
+    monkeypatch.setattr(config, "local_runtime_installed", lambda: True)
     monkeypatch.setattr(local, "generate", lambda *a, **k: "I think this is data.")
     r = scan(SAMPLES / "02_tiny_font.pdf", use_llm=True)
     assert r.findings[0].details["llm_label"] == "data"

@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     report_path = Path(sys.argv[1] if len(sys.argv) > 1 else "results/all_examples.json")
     expected_path = Path(sys.argv[2] if len(sys.argv) > 2 else ROOT / "examples" / "expected.json")
-    report = json.loads(report_path.read_text())
-    expected = json.loads(expected_path.read_text())
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    expected = json.loads(expected_path.read_text(encoding="utf-8"))
     by_name = {Path(r["file"]).name: r for r in report["reports"]}
 
     rows, ok_all = [], 0
@@ -55,7 +57,7 @@ def main() -> int:
 
     out = report_path.parent / "check.json"
     out.write_text(json.dumps([dict(zip(("file", "hidden_by", "risk", "payload", "label", "labelled_by", "ok"), r))
-                               for r in rows], indent=2, ensure_ascii=False))
+                               for r in rows], indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"written to {out}")
     return 0 if ok_all == len(rows) else 1
 

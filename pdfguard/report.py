@@ -1,4 +1,4 @@
-﻿"""Run the full pipeline on one PDF and build the report."""
+"""Run the full pipeline on one PDF and build the report."""
 from __future__ import annotations
 
 import json
@@ -142,34 +142,49 @@ def format_report(r: Report) -> str:
     return "\n".join(lines)
 
 
-def sanitize_pdf_text(doc: fitz.Document) -> str:
+def sanitize_pdf_text(doc: fitz.Document | pymupdf.Document | str | Path | bytes) -> str:
     """
     Extracts only the safe, visible text from a PDF, stripping out
     all hidden spans, micro-fonts, off-page elements, covered text,
     and invisible Unicode tricks.
     """
-    clean_pages = []
+    should_close = False
+    if isinstance(doc, bytes):
+        doc = pymupdf.open(stream=doc, filetype="pdf")
+        should_close = True
+    elif isinstance(doc, (str, Path)):
+        doc = pymupdf.open(str(doc))
+        should_close = True
 
-    for page_idx, page in enumerate(doc):
-        covering_rects = get_page_covering_rects(page)
-        spans = extract_spans(page)
-        visible_spans = []
+    try:
+        clean_pages = []
 
-        for s in spans:
-            reasons = evaluate_span(s, covering_rects=covering_rects)
-            
-            if not reasons:
-                cleaned_span_text = "".join(
-                    ch for ch in s["text"] if ch.isprintable() and ch not in [
-                        '\u200B', '\u200C', '\u200D', '\uFEFF', '\u200E', '\u200F'
-                    ]
-                ).strip()
+        for page_idx, page in enumerate(doc):
+            covering_rects = get_page_covering_rects(page)
+            spans = extract_spans(page)
+            visible_spans = []
 
-                if cleaned_span_text:
-                    visible_spans.append(cleaned_span_text)
+            for s in spans:
+                reasons = evaluate_span(s, covering_rects=covering_rects)
+                
+                if not reasons:
+                    cleaned_span_text = "".join(
+                        ch for ch in s["text"] if ch.isprintable() and ch not in [
+                            '\u200B', '\u200C', '\u200D', '\uFEFF', '\u200E', '\u200F'
+                        ]
+                    ).strip()
 
-        page_content = " ".join(visible_spans).strip()
-        if page_content:
-            clean_pages.append(f"--- Page {page_idx + 1} ---\n{page_content}")
+                    if cleaned_span_text:
+                        visible_spans.append(cleaned_span_text)
 
-    return "\n\n".join(clean_pages)
+            page_content = " ".join(visible_spans).strip()
+            if page_content:
+                clean_pages.append(f"--- Page {page_idx + 1} ---\n{page_content}")
+
+        return "\n\n".join(clean_pages)
+    finally:
+        if should_close:
+            try:
+                doc.close()
+            except Exception:
+                pass
