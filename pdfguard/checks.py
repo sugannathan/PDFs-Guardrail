@@ -137,6 +137,19 @@ def _overlaps_image(parts: DocumentParts, page: int, bbox) -> bool:
     return any(im.page == page and r.intersects(pymupdf.Rect(im.bbox)) for im in parts.images)
 
 
+def ocr_status() -> str:
+    """'' if OCR works, otherwise what is missing."""
+    try:
+        import pytesseract
+    except ImportError:
+        return "pytesseract not installed (pip install pytesseract)"
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception:
+        return "tesseract program not found (brew install tesseract / sudo apt install tesseract-ocr / conda install -c conda-forge tesseract)"
+    return ""
+
+
 def _ocr(png: bytes) -> str | None:
     try:
         import pytesseract
@@ -161,7 +174,9 @@ def text_findings(parts: DocumentParts, verdicts: list[SpanVerdict], renderer: P
         # text hidden under a picture. OCR of what the reader sees tells them apart.
         if use_ocr and ("no_ink" in reasons or "invisible_render_mode" in reasons) and _overlaps_image(parts, page, bbox):
             seen = _ocr(renderer.crop_png(page, bbox))
-            if seen is not None:
+            if seen is None:
+                f.details["ocr_error"] = ocr_status() or "OCR failed"
+            else:
                 ratio = difflib.SequenceMatcher(None, _norm(text), _norm(seen)).ratio()
                 f.details["ocr_text"] = seen.strip()[:200]
                 f.details["ocr_similarity"] = round(ratio, 2)

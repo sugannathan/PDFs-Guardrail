@@ -93,6 +93,13 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(text + "\n")
         return 0
 
+    if args.ocr:
+        from .checks import ocr_status
+        problem = ocr_status()
+        if problem:
+            print(f"[pdfguard] WARNING: --ocr requested but {problem}. "
+                  "Scanned pages with a normal OCR layer will show as suspicious.", file=sys.stderr)
+
     worst = 0
     rank = {"clean": 0, "suspicious": 1, "dangerous": 2}
     summary = []

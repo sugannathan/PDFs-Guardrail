@@ -6,8 +6,11 @@ checks.py, so a fooled LLM cannot make a finding disappear.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -120,11 +123,42 @@ LLM_SYSTEM = (
 MAX_LLM_CALLS_PER_DOC = 25
 
 
-def _post(body: dict, retries: int = 3) -> dict:
+_last_call = [0.0]
+_reply_cache: dict = {}
+
+
+def _min_interval() -> float:
+    """Seconds between API calls. PDFGUARD_RPM sets requests per minute (default 20 for Cerebras)."""
+    try:
+        rpm = float(os.environ.get("PDFGUARD_RPM", "20" if config.provider() == "cerebras" else "0"))
+    except ValueError:
+        rpm = 20.0
+    return 60.0 / rpm if rpm > 0 else 0.0
+
+
+def _pace() -> None:
+    wait = _last_call[0] + _min_interval() - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _last_call[0] = time.monotonic()
+
+
+def _retry_after(e: urllib.error.HTTPError, attempt: int) -> float:
+    try:
+        value = float(e.headers.get("retry-after", ""))
+        if 0 < value <= 120:
+            return value
+    except (TypeError, ValueError):
+        pass
+    return min(60.0, 3.0 * 2 ** attempt)          # 3, 6, 12, 24, 48 s
+
+
+def _post(body: dict, retries: int = 5) -> dict:
     data = json.dumps(body).encode()
     headers = {"Authorization": f"Bearer {config.api_key()}", "Content-Type": "application/json",
                "User-Agent": "pdfguard/0.2"}
     for attempt in range(retries + 1):
+        _pace()
         req = urllib.request.Request(config.url(), data=data, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -132,15 +166,19 @@ def _post(body: dict, retries: int = 3) -> dict:
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:300]
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
-                time.sleep(2 ** attempt)
+                wait = _retry_after(e, attempt)
+                if e.code == 429:
+                    print(f"[pdfguard] rate limit reached, waiting {wait:.0f} s ...", file=sys.stderr)
+                time.sleep(wait)
                 continue
             hint = {401: " (key is wrong or expired)", 402: " (no credits left on this account)",
                     403: " (key lacks permission, e.g. HF token needs 'Make calls to Inference Providers')",
-                    404: f" (model {config.model()!r} not available; run llm-check to list models)"}.get(e.code, "")
+                    404: f" (model {config.model()!r} not available; run llm-check to list models)",
+                    429: " (rate limit; lower PDFGUARD_RPM in secrets.env)"}.get(e.code, "")
             raise RuntimeError(f"{config.provider()} API error {e.code}{hint}: {detail}") from None
         except urllib.error.URLError as e:
             if attempt < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(min(30.0, 2.0 * 2 ** attempt))
                 continue
             raise RuntimeError(f"Cannot reach {config.provider()}: {e.reason}") from None
     raise RuntimeError(f"{config.provider()} API: no response")
@@ -179,7 +217,17 @@ def _parse_json(text: str) -> dict | None:
 
 
 def _llm_request(snippet: str, context: str, how_hidden: str = "") -> dict:
-    """Ask gpt-oss on Cerebras to label one hidden snippet. Returns the parsed JSON or {"error": ...}."""
+    """Label one hidden snippet with the configured LLM. Identical requests are answered from a cache."""
+    key = hashlib.sha256(f"{config.provider()}|{config.model()}|{how_hidden}|{snippet}|{context}".encode()).hexdigest()
+    if key in _reply_cache:
+        return dict(_reply_cache[key])
+    res = _llm_request_uncached(snippet, context, how_hidden)
+    if "error" not in res:
+        _reply_cache[key] = dict(res)
+    return res
+
+
+def _llm_request_uncached(snippet: str, context: str, how_hidden: str = "") -> dict:
     if not config.llm_available():
         if config.is_local():
             return {"error": "local model needs: pip install mlx-lm (Apple Silicon) or pip install transformers torch"}

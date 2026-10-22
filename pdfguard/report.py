@@ -125,6 +125,8 @@ def format_report(r: Report) -> str:
         lines.append(f"   - {f.label:<9} {where:<6} {','.join(f.reasons):<45} {text[:90]!r}{tag}")
         if f.explanation and f.label != "harmless":
             lines.append(f"     {f.explanation}")
+        if "ocr_error" in f.details:
+            lines.append(f"     (OCR not used: {f.details['ocr_error'][:120]})")
         if "llm_error" in f.details:
             lines.append(f"     (LLM not used: {f.details['llm_error'][:120]})")
     return "\n".join(lines)

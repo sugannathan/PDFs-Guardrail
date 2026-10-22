@@ -154,7 +154,7 @@ python -m pdfguard llm-check             # first run downloads the model, then p
 
 Pick another model with `PDFGUARD_MODEL` in `secrets.env`, e.g. `mlx-community/gemma-3-4b-it-4bit`, `google/gemma-3-1b-it` or `Qwen/Qwen3-1.7B`. Gemma is gated: accept its licence on huggingface.co and set `HF_TOKEN`. The model is loaded once and reused for all findings.
 
-**Option B: Cerebras API** (`PDFGUARD_PROVIDER=cerebras`, `CEREBRAS_API_KEY=...`, gpt-oss-120b).
+**Option B: Cerebras API** (`PDFGUARD_PROVIDER=cerebras`, `CEREBRAS_API_KEY=...`, gpt-oss-120b). Requests are paced to `PDFGUARD_RPM` per minute (default 20), rate-limit replies are retried up to 5 times honouring `Retry-After`, and identical snippets are only sent once per run.
 
 **Option C: Hugging Face Inference Providers API** (`PDFGUARD_PROVIDER=huggingface`, `HF_TOKEN=...`, needs credits).
 
