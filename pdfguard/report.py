@@ -1,4 +1,4 @@
-﻿"""Run the full pipeline on one PDF and build the report."""
+"""Run the full pipeline on one PDF and build the report."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pymupdf
-import fitz
+import pymupdf as fitz
 
 from .checks import INVISIBLE_RE, Finding, check_spans, offpage_findings, text_findings, _norm
 from .classify import classify
@@ -112,10 +112,18 @@ def scan(path: str | Path, use_llm: bool | None = None, use_ocr: bool = False, d
         findings = text_findings(parts, verdicts, renderer, use_ocr=use_ocr)
         findings += offpage_findings(parts, _norm(visible_text))
         classify(findings, visible_text, page_texts, use_llm=use_llm)
+        if parts.repaired:
+            # Added after labelling so it is never sent to the LLM. A damaged file can hide content
+            # that this tool cannot read, so it must not come back as clean.
+            findings.append(Finding("document", "The PDF file is damaged and had to be repaired to open it.",
+                                    ["damaged_pdf"], label="unknown", confidence=0.6,
+                                    explanation="Damaged or truncated file: some content may be missing or "
+                                                "unreadable, so it cannot be confirmed clean. Check the original file."))
     finally:
         renderer.close()
 
     counts = {label: sum(f.label == label for f in findings) for label in ("injection", "data", "unknown", "harmless")}
+    counts["needs_verification"] = sum(bool(f.details.get("needs_llm_verification")) for f in findings)
     counts["hidden_spans"] = sum(v.hidden for v in verdicts)
     counts["total_spans"] = len(verdicts)
     return Report(file=str(path), risk=_risk(findings), counts=counts, parts=parts.summary(), findings=findings,
@@ -137,6 +145,8 @@ def format_report(r: Report) -> str:
             lines.append(f"     {f.explanation}")
         if "ocr_error" in f.details:
             lines.append(f"     (OCR not used: {f.details['ocr_error'][:120]})")
+        if f.details.get("needs_llm_verification") and "llm_error" not in f.details:
+            lines.append("     (needs LLM verification: run with an LLM configured, see `pdfguard llm-check`)")
         if "llm_error" in f.details:
             lines.append(f"     (LLM not used: {f.details['llm_error'][:120]})")
     return "\n".join(lines)

@@ -1,5 +1,5 @@
-﻿import unicodedata
-import fitz
+import unicodedata
+import pymupdf as fitz
 from typing import List, Dict, Any, Optional
 
 ZERO_WIDTH_CHARS = {

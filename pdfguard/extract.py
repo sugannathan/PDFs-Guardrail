@@ -1,4 +1,4 @@
-﻿import fitz
+import pymupdf as fitz
 from typing import List, Dict, Any
 
 def get_page_covering_rects(page: fitz.Page) -> List[fitz.Rect]:

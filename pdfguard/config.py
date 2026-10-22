@@ -50,7 +50,7 @@ LOCAL = "local"
 
 
 def provider() -> str:
-    """PDFGUARD_PROVIDER if set (local, cerebras, huggingface), otherwise whichever key is present."""
+    """PDFGUARD_PROVIDER if set (local, cerebras, huggingface), else whichever key is present, else local."""
     chosen = os.environ.get("PDFGUARD_PROVIDER", "").strip().lower()
     if chosen in ("hf", "hugging_face", "hugging-face"):
         chosen = "huggingface"
@@ -61,6 +61,10 @@ def provider() -> str:
     for name, (_, _, env, _) in PROVIDERS.items():
         if os.environ.get(env, "").strip():
             return name
+    # no provider chosen and no API key: use the free local Hugging Face model if it can run here
+    import importlib.util
+    if importlib.util.find_spec("mlx_lm") or importlib.util.find_spec("transformers"):
+        return LOCAL
     return "cerebras"
 
 

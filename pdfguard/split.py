@@ -92,6 +92,10 @@ class PageInfo:
     rotation: int
 
 
+class PDFGuardError(ValueError):
+    """The file cannot be checked: not a PDF, password-protected, or without pages."""
+
+
 @dataclass
 class DocumentParts:
     path: str
@@ -107,6 +111,7 @@ class DocumentParts:
     xmp: str = ""
     javascript: list[str] = field(default_factory=list)
     layers: dict = field(default_factory=dict)       # name -> on (bool)
+    repaired: bool = False                            # file was damaged and had to be reconstructed
 
     def summary(self) -> dict:
         return {
@@ -121,6 +126,7 @@ class DocumentParts:
             "metadata_fields": sum(1 for v in self.metadata.values() if v),
             "xmp_bytes": len(self.xmp),
             "javascript": len(self.javascript),
+            "repaired": self.repaired,
             "layers": len(self.layers),
         }
 
@@ -177,13 +183,33 @@ def _line_segments(tr):
     if cur:
         segments.append(cur)
     if len(segments) == 1:
-        yield "".join(chr(c[0]) for c in chars), tr["bbox"]
+        yield _with_spaces(chars, size), tr["bbox"]
         return
     for seg in segments:
         r = pymupdf.Rect(seg[0][3])
         for c in seg[1:]:
             r |= pymupdf.Rect(c[3])
-        yield "".join(chr(c[0]) for c in seg), tuple(r)
+        yield _with_spaces(seg, size), tuple(r)
+
+
+def _with_spaces(chars, size: float) -> str:
+    """Join glyphs into text, inserting the spaces that the PDF only encodes as gaps.
+
+    LaTeX and many other producers do not store space characters between words; they
+    move the next glyph to the right instead. Without this, hidden sentences come out
+    as 'IGNOREALLPREVIOUSINSTRUCTIONS' and no longer look like an instruction.
+    """
+    out = []
+    prev = None
+    for c in chars:
+        ch = chr(c[0])
+        if prev is not None and ch != " " and out and out[-1] != " ":
+            gap = c[3][0] - prev[3][2]          # left edge of this glyph - right edge of previous
+            if gap > 0.15 * size:
+                out.append(" ")
+        out.append(ch)
+        prev = c
+    return "".join(out)
 
 
 def _make_span(tr, pno, text, bbox) -> TextSpan:
@@ -238,11 +264,32 @@ def _decode_preview(data: bytes, limit: int = 2000) -> str:
     return ""
 
 
+def open_pdf(path: str | Path) -> "pymupdf.Document":
+    """Open a file that must be a readable PDF, or raise PDFGuardError with a clear reason."""
+    path = str(path)
+    if not Path(path).is_file():
+        raise PDFGuardError(f"no such file: {path}")
+    try:
+        doc = pymupdf.open(path, filetype="pdf")
+    except Exception as e:
+        raise PDFGuardError(f"not a readable PDF ({e})") from e
+    if not doc.is_pdf:
+        doc.close()
+        raise PDFGuardError("not a PDF file")
+    if doc.needs_pass:
+        doc.close()
+        raise PDFGuardError("password-protected PDF: it cannot be checked without the password")
+    if doc.page_count == 0:
+        doc.close()
+        raise PDFGuardError("PDF has no pages (the file may be truncated or damaged)")
+    return doc
+
+
 def split_pdf(path: str | Path) -> DocumentParts:
     """Open a PDF and return all of its content, split by type."""
     path = str(path)
-    doc = pymupdf.open(path)
-    parts = DocumentParts(path=path)
+    doc = open_pdf(path)
+    parts = DocumentParts(path=path, repaired=bool(doc.is_repaired))
     parts.metadata = {k: v for k, v in (doc.metadata or {}).items() if k not in ("format", "encryption")}
     try:
         parts.xmp = doc.get_xml_metadata() or ""

@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 from typing import List, Dict, Any
 
 SUSPICIOUS_KEYWORDS = [

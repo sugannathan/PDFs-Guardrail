@@ -1,20 +1,55 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pdfguard"
-version = "0.2.0"
-description = "Detects prompt injection and hidden content in scientific PDFs before they reach LLM pipelines."
+version = "0.3.0"
+description = "Detect prompt injections and hidden content in scientific PDFs before they reach an LLM pipeline."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
-dependencies = ["pymupdf>=1.24", "numpy", "pillow"]
+authors = [
+    { name = "Sugan Kanagasenthinathan" },
+    { name = "Prakul Pandit" },
+    { name = "Fawad Ahmed Baig" },
+]
+keywords = ["pdf", "prompt-injection", "llm-security", "hidden-text", "scientific-literature",
+            "rag", "data-extraction", "materials-science"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing",
+]
+dependencies = [
+    "pymupdf>=1.24",
+    "numpy",
+    "pillow",
+]
 
 [project.optional-dependencies]
-ocr = ["pytesseract"]
-eval = ["pdfplumber", "pypdf", "pymupdf4llm", "pytest"]
+ocr = ["pytesseract"]                                   # also needs the tesseract program
+local = ["transformers>=4.51", "torch", "accelerate"]   # free local Hugging Face model
+mlx = ["mlx-lm; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+demo = ["streamlit>=1.30"]
+eval = ["pdfplumber", "pypdf", "pymupdf4llm", "requests", "pytest"]
+all = ["pdfguard[ocr,local,mlx,demo,eval]"]
 
 [project.scripts]
 pdfguard = "pdfguard.cli:main"
 
-[build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+[project.urls]
+Homepage = "https://github.com/sugannathan/PDFs-Guardrail"
+Repository = "https://github.com/sugannathan/PDFs-Guardrail"
+Issues = "https://github.com/sugannathan/PDFs-Guardrail/issues"
 
-[tool.setuptools]
-packages = ["pdfguard"]
+[tool.setuptools.packages.find]
+include = ["pdfguard*"]
+exclude = ["tests*", "eval*", "examples*", "demo*", "data*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

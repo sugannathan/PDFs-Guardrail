@@ -6,6 +6,7 @@ import io
 import re
 from dataclasses import dataclass, field
 
+import numpy as np
 import pymupdf
 
 from .ink import PageRenderer
@@ -77,11 +78,21 @@ def _color_dist(a, b) -> float:
 
 def check_spans(parts: DocumentParts, renderer: PageRenderer) -> list[SpanVerdict]:
     off_layers = {name for name, on in parts.layers.items() if not on}
-    by_page: dict[int, list[TextSpan]] = {}
-    for sp in parts.text_spans:
-        by_page.setdefault(sp.page, []).append(sp)
+    # Per page: an array of all span boxes, to find overlapping spans quickly (vectorised).
+    by_page: dict[int, list[int]] = {}
+    for i, sp in enumerate(parts.text_spans):
+        by_page.setdefault(sp.page, []).append(i)
+    boxes = {pno: np.array([parts.text_spans[i].bbox for i in idx], dtype=float) for pno, idx in by_page.items()}
+
+    def overlapping(i: int, s: TextSpan) -> list:
+        idx = by_page[s.page]
+        b = boxes[s.page]
+        x0, y0, x1, y1 = s.bbox
+        hit = (b[:, 0] < x1) & (b[:, 2] > x0) & (b[:, 1] < y1) & (b[:, 3] > y0)
+        return [parts.text_spans[idx[k]].bbox for k in np.nonzero(hit)[0] if idx[k] != i]
+
     verdicts = []
-    for s in parts.text_spans:
+    for i, s in enumerate(parts.text_spans):
         reasons = []
         if s.size < TINY_FONT_PT:
             reasons.append("tiny_font")
@@ -92,8 +103,7 @@ def check_spans(parts: DocumentParts, renderer: PageRenderer) -> list[SpanVerdic
         if s.layer and s.layer in off_layers:
             reasons.append("hidden_layer")
 
-        me = pymupdf.Rect(s.bbox)
-        others = [o.bbox for o in by_page.get(s.page, []) if o is not s and pymupdf.Rect(o.bbox).intersects(me)]
+        others = overlapping(i, s)
         ink = renderer.check(s.page, s.bbox, exclude=others)
         if renderer.covered_fraction(s.page, s.bbox, s.seqno) >= COVERED_MIN_FRACTION:
             # Only trust the cover if the text leaves no ink underneath it.
@@ -140,7 +150,8 @@ def _union(bboxes) -> list[float]:
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", INVISIBLE_RE.sub("", text).lower()).strip()
+    # Keep letters of every script (Chinese, Greek, accented Latin); drop punctuation and spacing.
+    return re.sub(r"[\W_]+", " ", INVISIBLE_RE.sub("", text).lower()).strip()
 
 
 def _overlaps_image(parts: DocumentParts, page: int, bbox) -> bool:

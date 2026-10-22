@@ -16,6 +16,10 @@ from .report import format_report, scan
 from .split import split_pdf, write_parts
 
 
+# Exit codes of `scan`: worst risk found, or EXIT_ERROR if any file could not be checked.
+EXIT_ERROR = 3
+
+
 def _pdfs(target: str) -> list[Path]:
     p = Path(target)
     return sorted(p.rglob("*.pdf")) if p.is_dir() else [p]
@@ -83,14 +87,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
 
     if args.cmd == "split":
-        parts = split_pdf(args.pdf)
+        try:
+            parts = split_pdf(args.pdf)
+        except Exception as e:
+            print(f"[ERR ] {args.pdf}: {e}", file=sys.stderr)
+            return EXIT_ERROR
         out = write_parts(parts, args.out, extract_images=args.images)
         print(json.dumps(parts.summary(), indent=2))
         print(f"written to {out}")
         return 0
 
     if args.cmd == "clean":
-        text = scan(args.pdf, use_llm=False).clean_text
+        try:
+            report = scan(args.pdf, use_llm=False)
+        except Exception as e:
+            print(f"[ERR ] {args.pdf}: {e}", file=sys.stderr)
+            return EXIT_ERROR
+        if report.parts.get("repaired"):
+            print(f"[pdfguard] WARNING: {args.pdf} is damaged; the text below may be incomplete.", file=sys.stderr)
+        text = report.clean_text
         if args.out:
             Path(args.out).write_text(text, encoding="utf-8")
         else:
@@ -109,7 +124,11 @@ def main(argv: list[str] | None = None) -> int:
     summary = []
     full_reports = []
     errors = []
-    for pdf in _pdfs(args.target):
+    pdfs = _pdfs(args.target)
+    if not pdfs:
+        print(f"[ERR ] {args.target}: no PDF files found", file=sys.stderr)
+        errors.append({"file": str(args.target), "error": "no PDF files found"})
+    for pdf in pdfs:
         try:
             parts = split_pdf(pdf)
             report = scan(pdf, use_llm=args.llm, use_ocr=args.ocr, dpi=args.dpi, parts=parts)
@@ -156,7 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"\nreport for {len(summary)} file(s) written to {out_file}", file=sys.stderr)
-    return worst      # exit code: 0 clean, 1 suspicious, 2 dangerous (handy in pipelines/CI)
+    # exit code: 0 clean, 1 suspicious, 2 dangerous, 3 a file could not be checked (handy in pipelines/CI)
+    return EXIT_ERROR if errors else worst
 
 
 if __name__ == "__main__":

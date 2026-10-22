@@ -1,5 +1,5 @@
-﻿import streamlit as st
-import fitz
+import streamlit as st
+import pymupdf as fitz
 from PIL import Image
 import io
 import sys
