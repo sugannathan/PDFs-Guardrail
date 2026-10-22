@@ -1,4 +1,4 @@
-"""Run the full pipeline on one PDF and build the report."""
+﻿"""Run the full pipeline on one PDF and build the report."""
 from __future__ import annotations
 
 import json
@@ -6,11 +6,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pymupdf
+import fitz
 
 from .checks import INVISIBLE_RE, Finding, check_spans, offpage_findings, text_findings, _norm
 from .classify import classify
 from .ink import PageRenderer
 from .split import DocumentParts, split_pdf
+from .extract import extract_spans, get_page_covering_rects
+from .rules import evaluate_span
 
 
 @dataclass
@@ -137,3 +140,36 @@ def format_report(r: Report) -> str:
         if "llm_error" in f.details:
             lines.append(f"     (LLM not used: {f.details['llm_error'][:120]})")
     return "\n".join(lines)
+
+
+def sanitize_pdf_text(doc: fitz.Document) -> str:
+    """
+    Extracts only the safe, visible text from a PDF, stripping out
+    all hidden spans, micro-fonts, off-page elements, covered text,
+    and invisible Unicode tricks.
+    """
+    clean_pages = []
+
+    for page_idx, page in enumerate(doc):
+        covering_rects = get_page_covering_rects(page)
+        spans = extract_spans(page)
+        visible_spans = []
+
+        for s in spans:
+            reasons = evaluate_span(s, covering_rects=covering_rects)
+            
+            if not reasons:
+                cleaned_span_text = "".join(
+                    ch for ch in s["text"] if ch.isprintable() and ch not in [
+                        '\u200B', '\u200C', '\u200D', '\uFEFF', '\u200E', '\u200F'
+                    ]
+                ).strip()
+
+                if cleaned_span_text:
+                    visible_spans.append(cleaned_span_text)
+
+        page_content = " ".join(visible_spans).strip()
+        if page_content:
+            clean_pages.append(f"--- Page {page_idx + 1} ---\n{page_content}")
+
+    return "\n\n".join(clean_pages)

@@ -1,0 +1,6 @@
+pymupdf>=1.24
+pypdf>=4.0
+pdfplumber>=0.11
+requests>=2.31
+# OCR for covered-text detection (Stage 1 ink check); optional
+pytesseract>=0.3.10

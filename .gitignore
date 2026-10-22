@@ -8,3 +8,6 @@ tests/samples/
 .venv/
 .env
 secrets.env
+# Generated eval test data (regenerate with the eval scripts)
+data/clean/
+data/attacked/
