@@ -19,7 +19,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 
@@ -31,6 +34,20 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 
 ATTACK_ORDER = ["white_text", "tiny_font", "off_page", "covered_text",
                 "invisible_render", "metadata", "annotation", "unicode"]
+
+# pypdf and pdfminer log a warning for every malformed font table, which buries the results.
+for _name in ("pypdf", "pdfminer", "pdfplumber"):
+    logging.getLogger(_name).setLevel(logging.ERROR)
+
+
+def default_jobs() -> int:
+    return max(1, min(8, (os.cpu_count() or 2) - 1))
+
+
+def progress(done: int, total: int, label: str) -> None:
+    """One self-overwriting status line on stderr, so long runs never look stuck."""
+    end = "\n" if done == total else ""
+    print(f"\r{label}: {done}/{total} files", end=end, file=sys.stderr, flush=True)
 
 
 def strip_zw(s: str) -> str:
@@ -113,12 +130,19 @@ def leaks(fn, path: Path) -> bool:
         return False
 
 
+def leaks_per_parser(path: str, pnames: list[str]) -> dict[str, bool]:
+    """Worker: run every parser on one file (runs in a separate process)."""
+    return {p: leaks(PARSERS[p], Path(path)) for p in pnames}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--attacked", default=str(DATA / "attacked"),
                     help="directory of attacked PDFs + manifest.json")
     ap.add_argument("--csv", default=None, help="optional path to write a CSV")
+    ap.add_argument("--jobs", type=int, default=default_jobs(),
+                    help="files processed in parallel (default: %(default)s)")
     args = ap.parse_args()
 
     attacked = Path(args.attacked)
@@ -130,14 +154,18 @@ def main() -> int:
 
     # counts[attack][parser] = [leaked, total]
     counts = defaultdict(lambda: defaultdict(lambda: [0, 0]))
-    for row in manifest:
-        path = attacked / row["output"]
-        for pname, fn in parsers.items():
-            c = counts[row["attack"]][pname]
-            c[0] += leaks(fn, path)
-            c[1] += 1
-
     pnames = list(parsers)
+    with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+        futures = {pool.submit(leaks_per_parser, str(attacked / row["output"]), pnames): row
+                   for row in manifest}
+        for done, fut in enumerate(as_completed(futures), 1):
+            row = futures[fut]
+            for pname, leaked in fut.result().items():
+                c = counts[row["attack"]][pname]
+                c[0] += leaked
+                c[1] += 1
+            progress(done, len(futures), "parsing")
+
     head = f"{'attack':18}" + "".join(f"{p:13}" for p in pnames)
     print(head)
     print("-" * len(head))

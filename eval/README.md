@@ -65,6 +65,10 @@ python eval/parser_leak.py --csv reports/parsers.csv
 python eval/score_attacks.py
 ```
 
+`parser_leak.py` and `score_attacks.py` process files in parallel (`--jobs N`, default up to 8) and show a
+progress line. `score_attacks.py` uses heuristic labels only unless `--llm` is given, so it makes no API
+calls by default. On the default set they take about 15 s and 35 s.
+
 With the default five papers this produces 80 attacked copies (5 papers × 8
 attacks × 2 payload kinds). Paths can be overridden as arguments.
 
