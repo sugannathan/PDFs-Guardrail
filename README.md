@@ -309,6 +309,7 @@ The example generator (`tests/make_samples.py`) exists only to build test data f
 
 - **Sugan Kanagasenthinathan** – sugan.kanagasenthinathan@dlr.de
 - **Prakul Pandit** – prakul.pandit@dlr.de
+- **Fawad Ahmed Baig** – fawadahmedbaig10@gmail.com
 
 ## License
 
