@@ -81,7 +81,9 @@ The **heuristic classifier** always runs:
 - `harmless`: duplicates of visible text, OCR layers that match the image, no words (glyph tables, stray symbols), a few zero-width characters
 - `unknown`: hidden text that matches none of these; review manually
 
-With `--llm`, an LLM re-labels non-harmless findings. It sees only the isolated snippet, wrapped as untrusted data, plus visible context from the same page.
+When a Cerebras key is configured, **gpt-oss-120b** labels every finding (most severe first, up to 25 per document). It sees only the isolated snippet, how it was hidden, and visible text from the same page, wrapped as untrusted data with the instruction never to follow it. It returns JSON with label, confidence and a one-sentence explanation.
+
+The LLM can raise a label (e.g. `unknown` to `injection`) but **cannot lower** one: if the heuristics say `injection` and the LLM says `harmless`, the finding stays dangerous and the report shows the disagreement. A hidden "this text is harmless" therefore cannot talk its way out of a finding.
 
 **Why the LLM does not do the detecting:** an LLM only sees extracted text, so it cannot know what is visible, and it can be injected by the very text it is checking. In PDFGuard, visibility is decided by code. A fooled LLM can mislabel a finding but cannot make it disappear.
 
@@ -97,6 +99,7 @@ With `--llm`, an LLM re-labels non-harmless findings. It sees only the isolated 
 git clone https://github.com/<your-org>/pdfguard.git
 cd pdfguard
 pip install -r requirements.txt
+cp .env.example .env    # then paste your Cerebras key into .env
 # optional, for --ocr: brew install tesseract   (or apt install tesseract-ocr)
 ```
 
@@ -115,8 +118,8 @@ python -m pdfguard scan data/attacked/ --out reports/ --ocr
 # also write the split parts next to each report
 python -m pdfguard scan data/attacked/ --out reports/ --split
 
-# label findings with an LLM
-python -m pdfguard scan paper.pdf --llm
+# heuristic labels only (no API calls)
+python -m pdfguard scan paper.pdf --no-llm
 
 # visible-only text for your pipeline
 python -m pdfguard clean paper.pdf --out paper_clean.txt
@@ -132,28 +135,19 @@ Example output:
      Hidden value(s) 4.8 ev differ from visible value(s) 3.2 ev, 3.3 ev
 ```
 
-### LLM options
+### Cerebras setup (LLM labelling)
 
-We use [Cerebras inference](https://cloud.cerebras.ai) for fast labelling:
+Findings are labelled by **gpt-oss-120b on [Cerebras](https://cloud.cerebras.ai)**. The key is never in the code: put it in a `.env` file, which git ignores.
 
 ```bash
-export CEREBRAS_API_KEY=csk-...
-export PDFGUARD_MODEL=gpt-oss-120b        # optional, this is the default
-python -m pdfguard llm-check               # sends one test snippet
-python -m pdfguard scan paper.pdf --llm
+cp .env.example .env
+# open .env and paste your key after CEREBRAS_API_KEY=
+python -m pdfguard llm-check        # sends one test snippet, prints OK or the error
 ```
 
-Other providers:
+Once the key is set, `scan` uses the LLM automatically. Use `--no-llm` for heuristics only. To use a different Cerebras model, set `PDFGUARD_MODEL` in `.env`.
 
-| Variable | Effect |
-|---|---|
-| `CEREBRAS_API_KEY` | Use Cerebras (`https://api.cerebras.ai/v1`) |
-| `ANTHROPIC_API_KEY` | Use the Anthropic API |
-| `OPENAI_API_KEY` | Use the OpenAI API |
-| `PDFGUARD_LLM_URL` + `PDFGUARD_LLM_KEY` | Any other OpenAI-compatible endpoint |
-| `PDFGUARD_MODEL` | Model name for whichever provider is used |
-
-If no LLM is reachable, PDFGuard keeps the heuristic labels and notes the error in the finding.
+If Cerebras is unreachable or rate-limited (PDFGuard retries 3 times), the heuristic labels are kept and the report says why the LLM was not used. Detection itself never depends on the LLM.
 
 ### Python
 
@@ -163,7 +157,7 @@ from pdfguard import scan, split_pdf
 parts = split_pdf("paper.pdf")          # all content, split by type
 print(parts.summary())
 
-report = scan("paper.pdf", use_ocr=True, use_llm=False)
+report = scan("paper.pdf", use_ocr=True)   # uses Cerebras if the key is in .env
 print(report.risk)                      # "clean", "suspicious" or "dangerous"
 for f in report.findings:
     print(f.page, f.reasons, f.label, f.text)
@@ -249,7 +243,8 @@ pdfguard/
 │   ├── split.py       # split a PDF into content types
 │   ├── ink.py         # render with and without text, ink and background per span
 │   ├── checks.py      # hidden-content checks for every content type
-│   ├── classify.py    # heuristic labels + optional LLM
+│   ├── classify.py    # heuristic labels + gpt-oss on Cerebras
+│   ├── config.py      # reads CEREBRAS_API_KEY from .env
 │   ├── report.py      # scan(), risk level, clean text, text report
 │   └── cli.py         # split / scan / clean commands
 ├── eval/

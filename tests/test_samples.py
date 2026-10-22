@@ -39,11 +39,11 @@ def samples():
 
 @pytest.mark.parametrize("name,risk", EXPECTED.items())
 def test_risk(name, risk):
-    assert scan(SAMPLES / f"{name}.pdf", use_ocr=True).risk == risk
+    assert scan(SAMPLES / f"{name}.pdf", use_ocr=True, use_llm=False).risk == risk
 
 
 def test_clean_text_drops_hidden_value():
-    r = scan(SAMPLES / "02_tiny_font.pdf")
+    r = scan(SAMPLES / "02_tiny_font.pdf", use_llm=False)
     assert "4.8 eV" in r.raw_text and "4.8 eV" not in r.clean_text
     assert "3.2 eV" in r.clean_text
 
@@ -51,3 +51,30 @@ def test_clean_text_drops_hidden_value():
 def test_split_has_all_types():
     parts = split_pdf(SAMPLES / "12_hidden_form_field.pdf")
     assert parts.form_fields and parts.text_spans and parts.metadata
+
+
+def test_llm_cannot_downgrade_attack(monkeypatch):
+    """A fooled LLM saying 'harmless' must not clear a hidden injection."""
+    from pdfguard import classify
+    monkeypatch.setattr(classify, "_llm_request",
+                        lambda *a, **k: {"label": "harmless", "confidence": 0.99, "explanation": "fine"})
+    r = scan(SAMPLES / "01_white_text.pdf", use_llm=True)
+    assert r.risk == "dangerous"
+    assert r.findings[0].label == "injection"
+    assert r.findings[0].details["llm_label"] == "harmless"
+
+
+def test_llm_labels_used(monkeypatch):
+    from pdfguard import classify
+    monkeypatch.setattr(classify, "_llm_request",
+                        lambda *a, **k: {"label": "data", "contradicts_visible": True, "confidence": 0.9,
+                                         "explanation": "x"})
+    r = scan(SAMPLES / "02_tiny_font.pdf", use_llm=True)
+    assert r.findings[0].method == "llm" and r.risk == "dangerous"
+
+
+def test_no_key_in_code():
+    import re
+    root = Path(__file__).resolve().parents[1]
+    for py in root.rglob("*.py"):
+        assert not re.search(r"csk-[A-Za-z0-9]{20,}", py.read_text()), py

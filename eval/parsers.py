@@ -75,7 +75,7 @@ def main() -> None:
 
     rows = []
     for pdf in sorted(Path(a.folder).rglob("*.pdf")):
-        report = scan(pdf, use_ocr=True)
+        report = scan(pdf, use_ocr=True, use_llm=False)
         hidden = [f for f in report.findings if f.label != "harmless" and f.source == "text"]
         if not hidden:
             continue

@@ -45,7 +45,7 @@ def main() -> None:
     ap.add_argument("--attacked")
     ap.add_argument("--clean")
     ap.add_argument("--out", default="results")
-    ap.add_argument("--llm", action="store_true")
+    ap.add_argument("--llm", action="store_true", help="also label with gpt-oss on Cerebras (slower)")
     ap.add_argument("--ocr", action="store_true")
     a = ap.parse_args()
 

@@ -6,3 +6,4 @@ reports/
 tests/samples/
 *.egg-info/
 .venv/
+.env

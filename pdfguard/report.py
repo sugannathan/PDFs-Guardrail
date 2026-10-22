@@ -35,7 +35,8 @@ class Report:
 
 
 def _risk(findings: list[Finding]) -> str:
-    if any(f.label == "injection" or (f.label == "data" and f.contradicts_visible) or f.decoded for f in findings):
+    if any(f.label == "injection" or (f.label == "data" and f.contradicts_visible) or f.decoded
+           or f.method == "heuristic+llm_disagrees" for f in findings):
         return "dangerous"
     if any(f.label in ("data", "unknown") for f in findings):
         return "suspicious"
@@ -89,7 +90,7 @@ def _visible_page_texts(doc, hidden_spans) -> dict[int, str]:
     return out
 
 
-def scan(path: str | Path, use_llm: bool = False, use_ocr: bool = False, dpi: int = 110,
+def scan(path: str | Path, use_llm: bool | None = None, use_ocr: bool = False, dpi: int = 110,
          parts: DocumentParts | None = None) -> Report:
     parts = parts or split_pdf(path)
     renderer = PageRenderer(str(path), dpi=dpi)
@@ -120,7 +121,10 @@ def format_report(r: Report) -> str:
         where = f"p{f.page + 1}" if f.page is not None else f.source
         text = (f.decoded and f"[decoded] {f.decoded}") or f.text
         text = text.replace("\n", " ")
-        lines.append(f"   - {f.label:<9} {where:<6} {','.join(f.reasons):<45} {text[:90]!r}")
+        tag = " [llm]" if f.method == "llm" else (" [llm disagrees]" if "disagrees" in f.method else "")
+        lines.append(f"   - {f.label:<9} {where:<6} {','.join(f.reasons):<45} {text[:90]!r}{tag}")
         if f.explanation and f.label != "harmless":
             lines.append(f"     {f.explanation}")
+        if "llm_error" in f.details:
+            lines.append(f"     (LLM not used: {f.details['llm_error'][:120]})")
     return "\n".join(lines)
