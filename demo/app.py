@@ -7,9 +7,10 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from pdfguard.extract import extract_spans
+from pdfguard.extract import extract_spans, get_page_covering_rects
 from pdfguard.rules import evaluate_span
 from pdfguard.offpage import scan_offpage
+from pdfguard.report import sanitize_pdf_text
 
 st.set_page_config(page_title="PDFGuard Demo", page_icon="🛡️", layout="wide")
 st.title("🛡️ PDFGuard: Pre-LLM Document Auditor")
@@ -23,9 +24,10 @@ if uploaded_file is not None:
 
     all_flagged = []
     for page_idx, page in enumerate(doc):
+        covering_rects = get_page_covering_rects(page)
         spans = extract_spans(page)
         for s in spans:
-            reasons = evaluate_span(s)
+            reasons = evaluate_span(s, covering_rects=covering_rects)
             if reasons:
                 all_flagged.append({
                     "page": page_idx + 1,
@@ -37,6 +39,16 @@ if uploaded_file is not None:
                 })
 
     offpage_findings = scan_offpage(doc)
+    clean_txt = sanitize_pdf_text(doc)
+
+    st.sidebar.header("Document Actions")
+    st.sidebar.info(f"Total Pages: {len(doc)}")
+    st.sidebar.download_button(
+        label="📥 Download Sanitized Text",
+        data=clean_txt,
+        file_name="sanitized_paper.txt",
+        mime="text/plain"
+    )
 
     col1, col2 = st.columns([1, 1])
 
@@ -87,3 +99,7 @@ if uploaded_file is not None:
         with c2:
             st.caption("PDFGuard (Sanitized)")
             st.success("🛡️ **LLM Output:** Hidden text stripped prior to prompting. Safe summary generated.")
+
+    st.divider()
+    with st.expander("📄 View Sanitized Pipeline Feed (Visible-Only Content)"):
+        st.text_area("Cleaned Text Output", value=clean_txt, height=200, disabled=True)
