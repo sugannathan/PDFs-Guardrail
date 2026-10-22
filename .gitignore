@@ -11,3 +11,7 @@ secrets.env
 # Generated eval test data (regenerate with the eval scripts)
 data/clean/
 data/attacked/
+
+__pycache__/
+*.pyc
+
