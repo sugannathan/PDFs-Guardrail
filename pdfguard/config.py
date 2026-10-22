@@ -3,7 +3,8 @@
 The API key is never stored in the code. Paste it into `secrets.env` in the
 project folder (that file is in .gitignore, so it is never committed):
 
-    CEREBRAS_API_KEY=csk-...
+    CEREBRAS_API_KEY=csk-...      # Cerebras
+    HF_TOKEN=hf_...               # or Hugging Face Inference Providers
 
 A file called `.env` works too.
 """
@@ -12,8 +13,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-DEFAULT_MODEL = "gpt-oss-120b"
+PROVIDERS = {
+    # name: (chat completions URL, models URL, env var for the key, default model)
+    "cerebras": ("https://api.cerebras.ai/v1/chat/completions", "https://api.cerebras.ai/v1/models",
+                 "CEREBRAS_API_KEY", "gpt-oss-120b"),
+    "huggingface": ("https://router.huggingface.co/v1/chat/completions", "https://router.huggingface.co/v1/models",
+                    "HF_TOKEN", "openai/gpt-oss-120b"),
+}
 
 
 def _load_dotenv() -> None:
@@ -39,17 +45,38 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+def provider() -> str:
+    """PDFGUARD_PROVIDER if set, otherwise whichever key is present (Cerebras first)."""
+    chosen = os.environ.get("PDFGUARD_PROVIDER", "").strip().lower()
+    if chosen in ("hf", "hugging_face", "hugging-face"):
+        chosen = "huggingface"
+    if chosen in PROVIDERS:
+        return chosen
+    for name, (_, _, env, _) in PROVIDERS.items():
+        if os.environ.get(env, "").strip():
+            return name
+    return "cerebras"
+
+
 def url() -> str:
-    """Override only for testing (e.g. a mock server)."""
-    return os.environ.get("CEREBRAS_BASE_URL", CEREBRAS_URL)
+    """Chat completions URL. CEREBRAS_BASE_URL overrides it, for testing only."""
+    return os.environ.get("CEREBRAS_BASE_URL") or PROVIDERS[provider()][0]
+
+
+def models_url() -> str:
+    return PROVIDERS[provider()][1]
+
+
+def key_name() -> str:
+    return PROVIDERS[provider()][2]
 
 
 def api_key() -> str:
-    return os.environ.get("CEREBRAS_API_KEY", "").strip()
+    return os.environ.get(key_name(), "").strip()
 
 
 def model() -> str:
-    return os.environ.get("PDFGUARD_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    return os.environ.get("PDFGUARD_MODEL", "").strip() or PROVIDERS[provider()][3]
 
 
 def llm_available() -> bool:

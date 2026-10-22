@@ -96,7 +96,7 @@ def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
 
 
 # --------------------------------------------------------------------- LLM
-# Labelling with gpt-oss on Cerebras. The LLM only labels findings that code
+# Labelling with gpt-oss on Cerebras or Hugging Face Inference Providers. The LLM only labels findings that code
 # has already found; it can never remove a finding. If the LLM calls something
 # harmless that the heuristics flagged as dangerous, the more severe label wins.
 
@@ -133,13 +133,24 @@ def _post(body: dict, retries: int = 3) -> dict:
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
                 time.sleep(2 ** attempt)
                 continue
-            raise RuntimeError(f"Cerebras API error {e.code}: {detail}") from None
+            hint = {401: " (key is wrong or expired)", 402: " (no credits left on this account)",
+                    403: " (key lacks permission, e.g. HF token needs 'Make calls to Inference Providers')",
+                    404: f" (model {config.model()!r} not available; run llm-check to list models)"}.get(e.code, "")
+            raise RuntimeError(f"{config.provider()} API error {e.code}{hint}: {detail}") from None
         except urllib.error.URLError as e:
             if attempt < retries:
                 time.sleep(2 ** attempt)
                 continue
-            raise RuntimeError(f"Cannot reach Cerebras: {e.reason}") from None
-    raise RuntimeError("Cerebras API: no response")
+            raise RuntimeError(f"Cannot reach {config.provider()}: {e.reason}") from None
+    raise RuntimeError(f"{config.provider()} API: no response")
+
+
+def list_models() -> list[str]:
+    req = urllib.request.Request(config.models_url(), headers={"Authorization": f"Bearer {config.api_key()}",
+                                                               "User-Agent": "pdfguard/0.2"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.load(resp)
+    return sorted(m.get("id", "") for m in data.get("data", []))
 
 
 def _parse_json(text: str) -> dict | None:
@@ -161,7 +172,7 @@ def _parse_json(text: str) -> dict | None:
 def _llm_request(snippet: str, context: str, how_hidden: str = "") -> dict:
     """Ask gpt-oss on Cerebras to label one hidden snippet. Returns the parsed JSON or {"error": ...}."""
     if not config.llm_available():
-        return {"error": "CEREBRAS_API_KEY not set (paste it into secrets.env)"}
+        return {"error": "no API key: set CEREBRAS_API_KEY or HF_TOKEN (e.g. in secrets.env)"}
     user = (f"<HOW_HIDDEN>{how_hidden}</HOW_HIDDEN>\n"
             f"<SNIPPET>\n{snippet[:2000]}\n</SNIPPET>\n\n"
             f"<VISIBLE_CONTEXT>\n{context[:3000]}\n</VISIBLE_CONTEXT>\n\n"

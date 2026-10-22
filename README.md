@@ -81,7 +81,7 @@ The **heuristic classifier** always runs:
 - `harmless`: duplicates of visible text, OCR layers that match the image, no words (glyph tables, stray symbols), a few zero-width characters
 - `unknown`: hidden text that matches none of these; review manually
 
-When a Cerebras key is configured, **gpt-oss-120b** labels every finding (most severe first, up to 25 per document). It sees only the isolated snippet, how it was hidden, and visible text from the same page, wrapped as untrusted data with the instruction never to follow it. It returns JSON with label, confidence and a one-sentence explanation.
+When an API key is configured, **gpt-oss-120b** labels every finding (most severe first, up to 25 per document). It sees only the isolated snippet, how it was hidden, and visible text from the same page, wrapped as untrusted data with the instruction never to follow it. It returns JSON with label, confidence and a one-sentence explanation.
 
 The LLM can raise a label (e.g. `unknown` to `injection`) but **cannot lower** one: if the heuristics say `injection` and the LLM says `harmless`, the finding stays dangerous and the report shows the disagreement. A hidden "this text is harmless" therefore cannot talk its way out of a finding.
 
@@ -99,7 +99,7 @@ The LLM can raise a label (e.g. `unknown` to `injection`) but **cannot lower** o
 git clone https://github.com/<your-org>/pdfguard.git
 cd pdfguard
 pip install -r requirements.txt
-# then paste your Cerebras key into secrets.env
+# then paste your Cerebras or Hugging Face key into secrets.env
 # optional, for --ocr: brew install tesseract   (or apt install tesseract-ocr)
 ```
 
@@ -135,17 +135,27 @@ Example output:
      Hidden value(s) 4.8 ev differ from visible value(s) 3.2 ev, 3.3 ev
 ```
 
-### Cerebras setup (LLM labelling)
+### LLM setup (Cerebras or Hugging Face)
 
-Findings are labelled by **gpt-oss-120b on [Cerebras](https://cloud.cerebras.ai)**. The key is never in the code: open `secrets.env` in the project folder and paste your key after `CEREBRAS_API_KEY=`. `secrets.env` is in `.gitignore`, so it is never committed.
+Findings are labelled by **gpt-oss-120b**, served by either [Cerebras](https://cloud.cerebras.ai) or [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index). The key is never in the code: open `secrets.env` in the project folder and paste **one** key:
 
-```bash
-python -m pdfguard llm-check        # sends one test snippet, prints OK or the error
+```
+CEREBRAS_API_KEY=csk-...      # Cerebras
+HF_TOKEN=hf_...               # or Hugging Face (fine-grained token with "Make calls to Inference Providers")
 ```
 
-Once the key is set, `scan` uses the LLM automatically. Use `--no-llm` for heuristics only. To use a different Cerebras model, set `PDFGUARD_MODEL` in `secrets.env`.
+`secrets.env` is in `.gitignore`, so it is never committed. `export CEREBRAS_API_KEY=...` or `export HF_TOKEN=...` in the terminal works too.
 
-If Cerebras is unreachable or rate-limited (PDFGuard retries 3 times), the heuristic labels are kept and the report says why the LLM was not used. Detection itself never depends on the LLM.
+```bash
+python -m pdfguard llm-check        # sends one test snippet; on failure explains why and lists usable models
+```
+
+| Setting | Effect |
+|---|---|
+| `PDFGUARD_PROVIDER` | `cerebras` or `huggingface` (default: whichever key is set, Cerebras first) |
+| `PDFGUARD_MODEL` | Model name, e.g. `openai/gpt-oss-120b:cerebras` on Hugging Face to route to Cerebras |
+
+Once a key is set, `scan` uses the LLM automatically; `--no-llm` turns it off. If the API is unreachable, rate-limited (3 retries) or out of credits, the heuristic labels are kept and the report says why. Detection never depends on the LLM.
 
 ### Python
 
@@ -155,7 +165,7 @@ from pdfguard import scan, split_pdf
 parts = split_pdf("paper.pdf")          # all content, split by type
 print(parts.summary())
 
-report = scan("paper.pdf", use_ocr=True)   # uses Cerebras if the key is in secrets.env
+report = scan("paper.pdf", use_ocr=True)   # uses the LLM if a key is in secrets.env
 print(report.risk)                      # "clean", "suspicious" or "dangerous"
 for f in report.findings:
     print(f.page, f.reasons, f.label, f.text)
@@ -241,8 +251,8 @@ pdfguard/
 │   ├── split.py       # split a PDF into content types
 │   ├── ink.py         # render with and without text, ink and background per span
 │   ├── checks.py      # hidden-content checks for every content type
-│   ├── classify.py    # heuristic labels + gpt-oss on Cerebras
-│   ├── config.py      # reads CEREBRAS_API_KEY from secrets.env
+│   ├── classify.py    # heuristic labels + gpt-oss (Cerebras or Hugging Face)
+│   ├── config.py      # provider, model and key from secrets.env
 │   ├── report.py      # scan(), risk level, clean text, text report
 │   └── cli.py         # split / scan / clean commands
 ├── eval/
