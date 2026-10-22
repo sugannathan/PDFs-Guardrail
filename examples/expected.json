@@ -122,6 +122,23 @@
     "hidden_by": "fake OCR layer",
     "payload": "4.8 eV"
   },
+  "17_long_author_list_clean.pdf": {
+    "risk": "clean",
+    "hidden_by": null,
+    "payload": null
+  },
+  "18_link_url_contains_js_clean.pdf": {
+    "risk": "clean",
+    "hidden_by": null,
+    "payload": null
+  },
+  "19_javascript_open_action.pdf": {
+    "risk": "dangerous",
+    "label": "injection",
+    "source": "javascript",
+    "hidden_by": "JavaScript open action",
+    "payload": "app.alert"
+  },
   "real_latex_paper_clean.pdf": {
     "risk": "clean",
     "hidden_by": null,

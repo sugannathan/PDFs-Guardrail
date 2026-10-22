@@ -209,7 +209,7 @@ text_for_llm = report.clean_text            # only what a human can see
 
 ## Examples and results
 
-`examples/` contains 19 PDFs: 16 that hide an injection or a fake value in a different way, and 3 with nothing hidden (a simple paper, a scanned page with a normal OCR layer, and a two-column LaTeX paper). `examples/expected.json` records what is hidden in each.
+`examples/` contains 22 PDFs: 17 that hide an injection or a fake value in a different way, and 5 with nothing hidden (a simple paper, a scanned page with a normal OCR layer, a two-column LaTeX paper, a paper with a long author list in its metadata, and a paper with a link whose URL contains `/JS`). `examples/expected.json` records what is hidden in each.
 
 | Example | Hidden by | Result |
 |---|---|---|
@@ -231,7 +231,7 @@ text_for_llm = report.clean_text            # only what a human can see
 | `16_scanned_ocr_layer_tampered` | fake OCR layer | ✓ data |
 | `00_clean`, `15_scanned_ocr_layer_benign`, `real_latex_paper_clean` | nothing | ✓ clean |
 
-**19/19 examples match** (`eval/check_examples.py`). On a wider set of 28 clean documents (the clean examples plus 25 LaTeX-generated documentation PDFs), there were **0 false alarms**.
+**22/22 examples match** (`eval/check_examples.py`). On a wider set of 28 clean documents (the clean examples plus 25 LaTeX-generated documentation PDFs), there were **0 false alarms**, and 0/5 false alarms on real arXiv and hackathon papers in `data/clean` (`eval/run_eval.py`).
 
 ### Which parsers pass hidden text on to the LLM?
 
@@ -278,7 +278,7 @@ pdfguard/
 │   ├── check_examples.py   # compare a report with examples/expected.json
 │   ├── run_eval.py         # detection and false-alarm rates
 │   └── parsers.py          # parser comparison
-├── examples/           # 19 test PDFs + expected.json
+├── examples/           # 22 test PDFs + expected.json
 ├── tests/              # pytest suite (pytest -q)
 ├── requirements.txt
 └── pyproject.toml
