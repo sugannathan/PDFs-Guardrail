@@ -78,3 +78,19 @@ def test_no_key_in_code():
     root = Path(__file__).resolve().parents[1]
     for py in root.rglob("*.py"):
         assert not re.search(r"csk-[A-Za-z0-9]{20,}", py.read_text()), py
+
+
+def test_local_provider_uses_local_generate(monkeypatch):
+    monkeypatch.setenv("PDFGUARD_PROVIDER", "local")
+    from pdfguard import local
+    monkeypatch.setattr(local, "generate", lambda *a, **k: '{"label": "injection", "confidence": 0.9, "explanation": "x"}')
+    r = scan(SAMPLES / "03_off_page.pdf", use_llm=True)
+    assert r.findings[0].method == "llm" and r.findings[0].details["llm_label"] == "injection"
+
+
+def test_plain_text_answer_is_parsed(monkeypatch):
+    monkeypatch.setenv("PDFGUARD_PROVIDER", "local")
+    from pdfguard import local
+    monkeypatch.setattr(local, "generate", lambda *a, **k: "I think this is data.")
+    r = scan(SAMPLES / "02_tiny_font.pdf", use_llm=True)
+    assert r.findings[0].details["llm_label"] == "data"

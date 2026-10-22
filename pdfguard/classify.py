@@ -96,7 +96,8 @@ def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
 
 
 # --------------------------------------------------------------------- LLM
-# Labelling with gpt-oss on Cerebras or Hugging Face Inference Providers. The LLM only labels findings that code
+# Labelling with an open model on your machine (local), or gpt-oss via Cerebras /
+# Hugging Face Inference Providers. The LLM only labels findings that code
 # has already found; it can never remove a finding. If the LLM calls something
 # harmless that the heuristics flagged as dangerous, the more severe label wins.
 
@@ -153,6 +154,14 @@ def list_models() -> list[str]:
     return sorted(m.get("id", "") for m in data.get("data", []))
 
 
+def _label_from_text(text: str) -> dict | None:
+    """Fallback for small models that answer in words instead of JSON."""
+    m = re.search(r"\b(injection|data|harmless)\b", (text or "").lower())
+    if not m:
+        return None
+    return {"label": m.group(1), "confidence": 0.5, "explanation": text.strip()[:200]}
+
+
 def _parse_json(text: str) -> dict | None:
     text = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.MULTILINE).strip()
     for m in re.finditer(r"\{.*?\}", text, re.DOTALL):
@@ -172,19 +181,25 @@ def _parse_json(text: str) -> dict | None:
 def _llm_request(snippet: str, context: str, how_hidden: str = "") -> dict:
     """Ask gpt-oss on Cerebras to label one hidden snippet. Returns the parsed JSON or {"error": ...}."""
     if not config.llm_available():
-        return {"error": "no API key: set CEREBRAS_API_KEY or HF_TOKEN (e.g. in secrets.env)"}
+        if config.is_local():
+            return {"error": "local model needs: pip install mlx-lm (Apple Silicon) or pip install transformers torch"}
+        return {"error": "no API key: set CEREBRAS_API_KEY or HF_TOKEN, or PDFGUARD_PROVIDER=local (secrets.env)"}
     user = (f"<HOW_HIDDEN>{how_hidden}</HOW_HIDDEN>\n"
             f"<SNIPPET>\n{snippet[:2000]}\n</SNIPPET>\n\n"
             f"<VISIBLE_CONTEXT>\n{context[:3000]}\n</VISIBLE_CONTEXT>\n\n"
             "Classify the SNIPPET. Reply with the JSON object only.")
-    body = {"model": config.model(), "temperature": 0, "max_completion_tokens": 1024,
-            "messages": [{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": user}]}
     try:
-        out = _post(body)
-        msg = out["choices"][0]["message"]
-        res = _parse_json(msg.get("content") or "")
+        if config.is_local():
+            from .local import generate
+            content = generate(LLM_SYSTEM, user, config.model())
+        else:
+            body = {"model": config.model(), "temperature": 0, "max_completion_tokens": 1024,
+                    "messages": [{"role": "system", "content": LLM_SYSTEM}, {"role": "user", "content": user}]}
+            out = _post(body)
+            content = out["choices"][0]["message"].get("content") or ""
+        res = _parse_json(content) or _label_from_text(content)
         if res is None:
-            return {"error": f"unparseable LLM reply: {(msg.get('content') or '')[:200]!r}"}
+            return {"error": f"unparseable LLM reply: {content[:200]!r}"}
         label = str(res.get("label", "")).strip().lower()
         if label not in ("injection", "data", "harmless"):
             return {"error": f"unknown label {label!r}"}

@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--out", help="folder for JSON reports (and split parts with --split)")
     g = c.add_mutually_exclusive_group()
     g.add_argument("--llm", dest="llm", action="store_true", default=None,
-                   help="label findings with an LLM (default when CEREBRAS_API_KEY or HF_TOKEN is set)")
+                   help="label findings with an LLM (default when PDFGUARD_PROVIDER=local or an API key is set)")
     g.add_argument("--no-llm", dest="llm", action="store_false", help="heuristic labels only, no API calls")
     c.add_argument("--ocr", action="store_true", help="OCR check for invisible text over images (needs tesseract)")
     c.add_argument("--split", action="store_true", help="also write the split content types per file")
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"OK: {config.provider()} is working.")
         else:
             print("FAILED, see error above.")
-            if config.api_key():
+            if config.api_key() and not config.is_local():
                 try:
                     models = list_models()
                     gpt = [m for m in models if "gpt-oss" in m or "llama" in m.lower() or "qwen" in m.lower()]
@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
                         print("  ", m)
                 except Exception as e:
                     print(f"(could not list models: {e})")
+        if config.is_local():
+            from .local import backend
+            print(f"local backend: {backend()}")
         return 0 if ok else 1
 
     if args.cmd == "split":

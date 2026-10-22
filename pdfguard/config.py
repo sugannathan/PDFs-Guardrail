@@ -3,8 +3,9 @@
 The API key is never stored in the code. Paste it into `secrets.env` in the
 project folder (that file is in .gitignore, so it is never committed):
 
-    CEREBRAS_API_KEY=csk-...      # Cerebras
-    HF_TOKEN=hf_...               # or Hugging Face Inference Providers
+    PDFGUARD_PROVIDER=local       # free: open model from Hugging Face on your machine
+    CEREBRAS_API_KEY=csk-...      # or Cerebras
+    HF_TOKEN=hf_...               # or Hugging Face Inference Providers (also used to download gated models)
 
 A file called `.env` works too.
 """
@@ -45,17 +46,31 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+LOCAL = "local"
+
+
 def provider() -> str:
-    """PDFGUARD_PROVIDER if set, otherwise whichever key is present (Cerebras first)."""
+    """PDFGUARD_PROVIDER if set (local, cerebras, huggingface), otherwise whichever key is present."""
     chosen = os.environ.get("PDFGUARD_PROVIDER", "").strip().lower()
     if chosen in ("hf", "hugging_face", "hugging-face"):
         chosen = "huggingface"
+    if chosen in ("local", "offline", "transformers", "mlx"):
+        return LOCAL
     if chosen in PROVIDERS:
         return chosen
     for name, (_, _, env, _) in PROVIDERS.items():
         if os.environ.get(env, "").strip():
             return name
     return "cerebras"
+
+
+def is_local() -> bool:
+    return provider() == LOCAL
+
+
+def local_runtime_installed() -> bool:
+    import importlib.util
+    return any(importlib.util.find_spec(m) is not None for m in ("mlx_lm", "transformers"))
 
 
 def url() -> str:
@@ -68,21 +83,29 @@ def models_url() -> str:
 
 
 def key_name() -> str:
-    return PROVIDERS[provider()][2]
+    return "none" if is_local() else PROVIDERS[provider()][2]
 
 
 def api_key() -> str:
-    return os.environ.get(key_name(), "").strip()
+    return "" if is_local() else os.environ.get(key_name(), "").strip()
 
 
 def model() -> str:
-    return os.environ.get("PDFGUARD_MODEL", "").strip() or PROVIDERS[provider()][3]
+    chosen = os.environ.get("PDFGUARD_MODEL", "").strip()
+    if chosen:
+        return chosen
+    if is_local():
+        from .local import default_model
+        return default_model()
+    return PROVIDERS[provider()][3]
 
 
 def llm_available() -> bool:
-    return bool(api_key())
+    return local_runtime_installed() if is_local() else bool(api_key())
 
 
 def masked_key() -> str:
+    if is_local():
+        return "not needed (local model)"
     k = api_key()
     return f"{k[:4]}...{k[-4:]}" if len(k) > 10 else ("set" if k else "not set")

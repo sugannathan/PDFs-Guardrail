@@ -2,9 +2,13 @@ pymupdf>=1.24
 numpy
 pillow
 pytesseract      # optional: --ocr (also needs the tesseract binary: brew install tesseract / apt install tesseract-ocr)
+
+# local LLM (free, Hugging Face models on your machine) - install ONE:
+#   Apple Silicon Mac (fast):  pip install mlx-lm
+#   any machine:               pip install transformers torch accelerate
+
 # for eval/parsers.py (optional)
 pdfplumber
 pypdf
 pymupdf4llm
-# docling        # heavy; install if you want it in the parser comparison
 pytest
