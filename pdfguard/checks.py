@@ -96,7 +96,10 @@ def check_spans(parts: DocumentParts, renderer: PageRenderer) -> list[SpanVerdic
         others = [o.bbox for o in by_page.get(s.page, []) if o is not s and pymupdf.Rect(o.bbox).intersects(me)]
         ink = renderer.check(s.page, s.bbox, exclude=others)
         if renderer.covered_fraction(s.page, s.bbox, s.seqno) >= COVERED_MIN_FRACTION:
-            reasons.append("covered")
+            # Only trust the cover if the text leaves no ink underneath it.
+            under = renderer.ink_under(s.page, s.bbox, renderer.covers_after(s.page, s.bbox, s.seqno), exclude=others)
+            if not under.visible or under.undetermined:
+                reasons.append("covered")
         if ink.clipped_area < 0.5:
             reasons.append("off_page")
         elif not ink.visible:
@@ -260,7 +263,8 @@ def offpage_findings(parts: DocumentParts, visible_norm: str) -> list[Finding]:
 
     for key, value in parts.metadata.items():
         value = str(value or "")
-        if interesting(value, 80 if key not in _STANDARD_META else 200):
+        # long author lists and titles are normal; only flag those for content, not length
+        if interesting(value, 80 if key not in _STANDARD_META else 10 ** 9):
             findings.append(Finding("metadata", value, [f"metadata:{key}"]))
 
     if parts.xmp:
