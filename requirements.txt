@@ -1,6 +1,5 @@
 pymupdf>=1.24
 numpy
-pillow
 pytesseract      # optional: --ocr (also needs the tesseract binary: brew install tesseract / apt install tesseract-ocr)
 
 # local LLM (free, Hugging Face models on your machine) - install ONE:
@@ -12,3 +11,5 @@ pdfplumber
 pypdf
 pymupdf4llm
 pytest
+streamlit>=1.30.0
+pillow>=10.0.0
