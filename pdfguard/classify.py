@@ -17,7 +17,7 @@ import urllib.request
 
 from . import config
 
-from .checks import Finding, _norm
+from .checks import INVISIBLE_RE, Finding, _norm
 
 INSTRUCTION_PATTERNS = [
     r"\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|earlier|all|any)\b.{0,30}\b(instruction|prompt|rule|direction|context)s?",
@@ -48,20 +48,36 @@ def quantities(text: str) -> list[tuple[str, str]]:
     return [(n.replace(",", "."), u.lower()) for n, u in QUANTITY_RE.findall(text)]
 
 
+NUMBER_RE = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w.]*\d)")
+OVERRIDE_RE = re.compile(r"\b(supersede[sd]?|overrides?|replaces?|instead of|use this value|corrected|correction|"
+                         r"erratum|should read|actual value|true value|real value|updated value|revised value)\b",
+                         re.IGNORECASE)
+
+
+def numbers(text: str) -> set[str]:
+    return {n.replace(",", ".") for n in NUMBER_RE.findall(text)}
+
+
 def looks_like_data(text: str) -> bool:
-    return bool(quantities(text)) and bool(DATA_WORDS.search(text))
+    if quantities(text) and DATA_WORDS.search(text):
+        return True
+    # A number together with "corrected / supersedes / use this value" is a value claim even without a unit.
+    return bool(numbers(text)) and bool(OVERRIDE_RE.search(text))
 
 
 def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
-    text = f.decoded or f.text
+    text = INVISIBLE_RE.sub("", f.decoded or f.text)     # zero-width characters break pattern matching
     norm = _norm(text)
 
     if f.source == "javascript" or "javascript_link" in f.reasons:
         f.label, f.confidence, f.explanation = "injection", 0.7, "Active content (JavaScript) in the document."
         return
-    if looks_like_instruction(text):
+    plain = INVISIBLE_RE.sub("", f.text)
+    if looks_like_instruction(text) or looks_like_instruction(plain):
         f.label, f.confidence, f.explanation = "injection", 0.85, "Hidden text phrased as an instruction to an AI or reader."
         return
+    if not looks_like_data(text) and looks_like_data(plain):
+        text = plain
     if looks_like_data(text):
         hidden_q = quantities(text)
         visible_q = quantities(visible_text)
@@ -71,13 +87,21 @@ def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
         conflicts = [(n, u, sorted(visible_by_unit[u])[:5]) for n, u in hidden_q
                      if u in visible_by_unit and n not in visible_by_unit[u]]
         f.label = "data"
-        f.contradicts_visible = bool(conflicts)
-        f.confidence = 0.8 if conflicts else 0.6
-        f.explanation = ("Hidden value(s) " + ", ".join(f"{n} {u}" for n, u, _ in conflicts) +
-                         " differ from visible value(s) " + ", ".join(f"{v} {u}" for _, u, vals in conflicts for v in vals)
-                         if conflicts else "Hidden statement containing numerical values.")
         if conflicts:
+            f.contradicts_visible, f.confidence = True, 0.8
+            f.explanation = ("Hidden value(s) " + ", ".join(f"{n} {u}" for n, u, _ in conflicts) +
+                             " differ from visible value(s) " +
+                             ", ".join(f"{v} {u}" for _, u, vals in conflicts for v in vals))
             f.details["visible_values"] = {u: vals for _, u, vals in conflicts}
+            return
+        new_numbers = sorted(numbers(text) - numbers(visible_text))
+        if OVERRIDE_RE.search(text) and new_numbers:
+            f.contradicts_visible, f.confidence = True, 0.75
+            f.explanation = (f"Hidden text claims to correct or override reported values with "
+                             f"{', '.join(new_numbers[:5])}, which appear nowhere in the visible text.")
+            return
+        f.contradicts_visible, f.confidence = False, 0.6
+        f.explanation = "Hidden statement containing numerical values."
         return
     if "matches_visible_image" in f.reasons:
         f.label, f.confidence, f.explanation = "harmless", 0.8, "Invisible text matches what the page image shows (OCR layer)."
@@ -91,8 +115,7 @@ def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
     if len(norm) < 4 and not f.decoded:
         f.label, f.confidence, f.explanation = "harmless", 0.5, "Very short fragment (e.g. stray characters or spacing)."
         return
-    if "invisible_unicode" in f.reasons and not f.decoded and "bidi_override" not in f.reasons \
-            and f.details.get("count", 0) < 5:
+    if f.reasons == ["invisible_unicode"] and not f.decoded and f.details.get("count", 0) < 5:
         f.label, f.confidence, f.explanation = "harmless", 0.5, "A few zero-width characters, common in normal typesetting."
         return
     f.label, f.confidence, f.explanation = "unknown", 0.4, "Hidden content that does not match known patterns; review manually."

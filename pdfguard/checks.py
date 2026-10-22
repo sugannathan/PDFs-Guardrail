@@ -23,7 +23,8 @@ BIDI_RE = re.compile(r"[‪-‮⁦-⁩]")
 
 # Reasons that on their own mean "a reader cannot see this span".
 HIDING_REASONS = {"no_ink", "off_page", "tiny_font", "invisible_render_mode", "transparent",
-                  "hidden_layer", "color_matches_background"}
+                  "hidden_layer", "color_matches_background", "covered"}
+COVERED_MIN_FRACTION = 0.75
 
 
 @dataclass
@@ -61,11 +62,11 @@ def decode_invisible(text: str) -> str:
     tags = "".join(chr(ord(c) - 0xE0000) for c in TAG_RE.findall(text))
     if tags:
         return tags
-    bits = "".join("0" if c == "​" else "1" for c in text if c in "​‌")
-    if len(bits) >= 16:
-        chars = [chr(int(bits[i:i + 8], 2)) for i in range(0, len(bits) - len(bits) % 8, 8)]
-        msg = "".join(chars)
-        if sum(c.isprintable() for c in msg) / len(msg) > 0.9:
+    # Binary encodings are an unbroken run of ZWSP/ZWNJ; scattered zero-width characters are not a message.
+    for run in sorted(re.findall("[\u200b\u200c]{16,}", text), key=len, reverse=True):
+        bits = "".join("0" if c == "\u200b" else "1" for c in run)
+        msg = "".join(chr(int(bits[i:i + 8], 2)) for i in range(0, len(bits) - len(bits) % 8, 8))
+        if msg and sum(c.isprintable() for c in msg) / len(msg) > 0.9 and re.search("[A-Za-z]{2}", msg):
             return msg
     return ""
 
@@ -76,6 +77,9 @@ def _color_dist(a, b) -> float:
 
 def check_spans(parts: DocumentParts, renderer: PageRenderer) -> list[SpanVerdict]:
     off_layers = {name for name, on in parts.layers.items() if not on}
+    by_page: dict[int, list[TextSpan]] = {}
+    for sp in parts.text_spans:
+        by_page.setdefault(sp.page, []).append(sp)
     verdicts = []
     for s in parts.text_spans:
         reasons = []
@@ -88,7 +92,11 @@ def check_spans(parts: DocumentParts, renderer: PageRenderer) -> list[SpanVerdic
         if s.layer and s.layer in off_layers:
             reasons.append("hidden_layer")
 
-        ink = renderer.check(s.page, s.bbox)
+        me = pymupdf.Rect(s.bbox)
+        others = [o.bbox for o in by_page.get(s.page, []) if o is not s and pymupdf.Rect(o.bbox).intersects(me)]
+        ink = renderer.check(s.page, s.bbox, exclude=others)
+        if renderer.covered_fraction(s.page, s.bbox, s.seqno) >= COVERED_MIN_FRACTION:
+            reasons.append("covered")
         if ink.clipped_area < 0.5:
             reasons.append("off_page")
         elif not ink.visible:
@@ -163,13 +171,16 @@ def text_findings(parts: DocumentParts, verdicts: list[SpanVerdict], renderer: P
                   use_ocr: bool = False) -> list[Finding]:
     findings = []
     for group in _merge_hidden(verdicts):
-        text = " ".join(v.span.text.strip() for v in group if v.span.text.strip())
+        raw = " ".join(v.span.text.strip() for v in group if v.span.text.strip())
+        text = INVISIBLE_RE.sub("", raw)
         reasons = sorted(set(group[0].reasons))
         page = group[0].span.page
         bbox = _union([v.span.bbox for v in group])
-        f = Finding("text", text, reasons, page, bbox,
+        f = Finding("text", text, reasons, page, bbox, decoded=decode_invisible(raw) or None,
                     details={"font_size": group[0].span.size, "color": group[0].span.color,
                              "render_mode": group[0].span.render_mode, "spans": len(group)})
+        if raw != text:
+            f.details["invisible_chars_removed"] = len(raw) - len(text)
         # Invisible text lying on an image is either an OCR layer (harmless) or
         # text hidden under a picture. OCR of what the reader sees tells them apart.
         if use_ocr and ("no_ink" in reasons or "invisible_render_mode" in reasons) and _overlaps_image(parts, page, bbox):
