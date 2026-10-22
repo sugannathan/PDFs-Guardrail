@@ -161,7 +161,7 @@ def _parse_json(text: str) -> dict | None:
 def _llm_request(snippet: str, context: str, how_hidden: str = "") -> dict:
     """Ask gpt-oss on Cerebras to label one hidden snippet. Returns the parsed JSON or {"error": ...}."""
     if not config.llm_available():
-        return {"error": "CEREBRAS_API_KEY not set (add it to .env)"}
+        return {"error": "CEREBRAS_API_KEY not set (paste it into secrets.env)"}
     user = (f"<HOW_HIDDEN>{how_hidden}</HOW_HIDDEN>\n"
             f"<SNIPPET>\n{snippet[:2000]}\n</SNIPPET>\n\n"
             f"<VISIBLE_CONTEXT>\n{context[:3000]}\n</VISIBLE_CONTEXT>\n\n"

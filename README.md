@@ -99,7 +99,7 @@ The LLM can raise a label (e.g. `unknown` to `injection`) but **cannot lower** o
 git clone https://github.com/<your-org>/pdfguard.git
 cd pdfguard
 pip install -r requirements.txt
-cp .env.example .env    # then paste your Cerebras key into .env
+# then paste your Cerebras key into secrets.env
 # optional, for --ocr: brew install tesseract   (or apt install tesseract-ocr)
 ```
 
@@ -137,15 +137,13 @@ Example output:
 
 ### Cerebras setup (LLM labelling)
 
-Findings are labelled by **gpt-oss-120b on [Cerebras](https://cloud.cerebras.ai)**. The key is never in the code: put it in a `.env` file, which git ignores.
+Findings are labelled by **gpt-oss-120b on [Cerebras](https://cloud.cerebras.ai)**. The key is never in the code: open `secrets.env` in the project folder and paste your key after `CEREBRAS_API_KEY=`. `secrets.env` is in `.gitignore`, so it is never committed.
 
 ```bash
-cp .env.example .env
-# open .env and paste your key after CEREBRAS_API_KEY=
 python -m pdfguard llm-check        # sends one test snippet, prints OK or the error
 ```
 
-Once the key is set, `scan` uses the LLM automatically. Use `--no-llm` for heuristics only. To use a different Cerebras model, set `PDFGUARD_MODEL` in `.env`.
+Once the key is set, `scan` uses the LLM automatically. Use `--no-llm` for heuristics only. To use a different Cerebras model, set `PDFGUARD_MODEL` in `secrets.env`.
 
 If Cerebras is unreachable or rate-limited (PDFGuard retries 3 times), the heuristic labels are kept and the report says why the LLM was not used. Detection itself never depends on the LLM.
 

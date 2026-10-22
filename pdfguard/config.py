@@ -1,9 +1,11 @@
 """Settings, read from environment variables or a local .env file.
 
-The API key is never stored in the code. Put it in a file called `.env`
-in the project folder (that file is in .gitignore):
+The API key is never stored in the code. Paste it into `secrets.env` in the
+project folder (that file is in .gitignore, so it is never committed):
 
     CEREBRAS_API_KEY=csk-...
+
+A file called `.env` works too.
 """
 from __future__ import annotations
 
@@ -15,9 +17,12 @@ DEFAULT_MODEL = "gpt-oss-120b"
 
 
 def _load_dotenv() -> None:
-    """Read KEY=VALUE lines from .env (current folder or project root). Existing env vars win."""
-    for folder in (Path.cwd(), Path(__file__).resolve().parents[1]):
-        env = folder / ".env"
+    """Read KEY=VALUE lines from secrets.env or .env (current folder, then project root).
+
+    Values already set in the environment win.
+    """
+    for env in (Path.cwd() / "secrets.env", Path.cwd() / ".env",
+                Path(__file__).resolve().parents[1] / "secrets.env", Path(__file__).resolve().parents[1] / ".env"):
         if not env.is_file():
             continue
         for line in env.read_text(encoding="utf-8").splitlines():

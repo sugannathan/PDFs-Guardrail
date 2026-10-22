@@ -7,3 +7,4 @@ tests/samples/
 *.egg-info/
 .venv/
 .env
+secrets.env
