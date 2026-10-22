@@ -92,6 +92,10 @@ class PageInfo:
     rotation: int
 
 
+class PDFGuardError(ValueError):
+    """The file cannot be checked: not a PDF, password-protected, or without pages."""
+
+
 @dataclass
 class DocumentParts:
     path: str
@@ -107,6 +111,7 @@ class DocumentParts:
     xmp: str = ""
     javascript: list[str] = field(default_factory=list)
     layers: dict = field(default_factory=dict)       # name -> on (bool)
+    repaired: bool = False                            # file was damaged and had to be reconstructed
 
     def summary(self) -> dict:
         return {
@@ -121,6 +126,7 @@ class DocumentParts:
             "metadata_fields": sum(1 for v in self.metadata.values() if v),
             "xmp_bytes": len(self.xmp),
             "javascript": len(self.javascript),
+            "repaired": self.repaired,
             "layers": len(self.layers),
         }
 
@@ -238,11 +244,32 @@ def _decode_preview(data: bytes, limit: int = 2000) -> str:
     return ""
 
 
+def open_pdf(path: str | Path) -> "pymupdf.Document":
+    """Open a file that must be a readable PDF, or raise PDFGuardError with a clear reason."""
+    path = str(path)
+    if not Path(path).is_file():
+        raise PDFGuardError(f"no such file: {path}")
+    try:
+        doc = pymupdf.open(path, filetype="pdf")
+    except Exception as e:
+        raise PDFGuardError(f"not a readable PDF ({e})") from e
+    if not doc.is_pdf:
+        doc.close()
+        raise PDFGuardError("not a PDF file")
+    if doc.needs_pass:
+        doc.close()
+        raise PDFGuardError("password-protected PDF: it cannot be checked without the password")
+    if doc.page_count == 0:
+        doc.close()
+        raise PDFGuardError("PDF has no pages (the file may be truncated or damaged)")
+    return doc
+
+
 def split_pdf(path: str | Path) -> DocumentParts:
     """Open a PDF and return all of its content, split by type."""
     path = str(path)
-    doc = pymupdf.open(path)
-    parts = DocumentParts(path=path)
+    doc = open_pdf(path)
+    parts = DocumentParts(path=path, repaired=bool(doc.is_repaired))
     parts.metadata = {k: v for k, v in (doc.metadata or {}).items() if k not in ("format", "encryption")}
     try:
         parts.xmp = doc.get_xml_metadata() or ""

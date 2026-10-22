@@ -24,15 +24,35 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import sys
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+
+# Run from anywhere: make the repo-root pdfguard package importable without installing it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 SENTINEL = "PDFGUARD-TEST"
 ZERO_WIDTH = {0x200B, 0x200C, 0x200D, 0xFEFF}
 ATTACK_ORDER = ["white_text", "tiny_font", "off_page", "covered_text",
                 "invisible_render", "metadata", "annotation", "unicode"]
+
+# pypdf and pdfminer log a warning for every malformed font table, which buries the results.
+for _name in ("pypdf", "pdfminer", "pdfplumber"):
+    logging.getLogger(_name).setLevel(logging.ERROR)
+
+
+def default_jobs() -> int:
+    return max(1, min(8, (os.cpu_count() or 2) - 1))
+
+
+def progress(done: int, total: int, label: str) -> None:
+    """One self-overwriting status line on stderr, so long runs never look stuck."""
+    end = "\n" if done == total else ""
+    print(f"\r{label}: {done}/{total} files", end=end, file=sys.stderr, flush=True)
 
 
 def strip_zw(s: str) -> str:
@@ -71,12 +91,33 @@ def report_risk(report) -> str:
     return str(risk or "")
 
 
-def score_with_detector(scan, attacked: Path, clean: Path,
-                        manifest: list) -> int:
+def _scan_one(path: str, use_llm: bool) -> tuple[bool, str]:
+    """Worker: scan one file; return (payload found, risk). Runs in a separate process."""
+    from pdfguard import scan
+    try:
+        rep = scan(path, use_llm=use_llm)
+    except Exception as e:
+        print(f"\nerror {path}: {e}", file=sys.stderr)
+        return False, "error"
+    found = any(SENTINEL in strip_zw(t) for t in finding_texts(rep))
+    return found, report_risk(rep)
+
+
+def _scan_all(paths: list[str], use_llm: bool, jobs: int, label: str) -> list[tuple[bool, str]]:
+    results = [None] * len(paths)
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        futures = {pool.submit(_scan_one, p, use_llm): i for i, p in enumerate(paths)}
+        for done, fut in enumerate(as_completed(futures), 1):
+            results[futures[fut]] = fut.result()
+            progress(done, len(paths), label)
+    return results
+
+
+def score_with_detector(attacked: Path, clean: Path, manifest: list,
+                        use_llm: bool = False, jobs: int = 1) -> int:
     det = defaultdict(lambda: [0, 0])  # attack -> [detected, total]
-    for row in manifest:
-        rep = scan(str(attacked / row["output"]))
-        found = any(SENTINEL in strip_zw(t) for t in finding_texts(rep))
+    results = _scan_all([str(attacked / row["output"]) for row in manifest], use_llm, jobs, "attacked")
+    for row, (found, _risk) in zip(manifest, results):
         d = det[row["attack"]]
         d[0] += found
         d[1] += 1
@@ -95,10 +136,13 @@ def score_with_detector(scan, attacked: Path, clean: Path,
     print(f"{'overall':18}{f'{tot_d}/{tot_n} ({100*tot_d/max(tot_n,1):.0f}%)':18}")
 
     clean_pdfs = sorted(clean.glob("*.pdf"))
-    false_alarms = sum(1 for p in clean_pdfs
-                       if report_risk(scan(str(p))) not in ("", "clean"))
+    clean_results = _scan_all([str(p) for p in clean_pdfs], use_llm, jobs, "clean") if clean_pdfs else []
+    flagged = [p.name for p, (_f, risk) in zip(clean_pdfs, clean_results) if risk not in ("", "clean")]
+    false_alarms = len(flagged)
     print(f"\nfalse alarms on clean papers: {false_alarms}/{len(clean_pdfs)}"
           f" ({100*false_alarms/max(len(clean_pdfs),1):.0f}%)")
+    for name in flagged:
+        print(f"  flagged: {name}")
     return 0
 
 
@@ -154,6 +198,10 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--attacked", default=str(DATA / "attacked"))
     ap.add_argument("--clean", default=str(DATA / "clean"))
+    ap.add_argument("--jobs", type=int, default=default_jobs(),
+                    help="files scanned in parallel (default: %(default)s)")
+    ap.add_argument("--llm", action="store_true",
+                    help="also label findings with the configured LLM (slow, uses API calls); off by default")
     args = ap.parse_args()
 
     attacked = Path(args.attacked)
@@ -162,7 +210,7 @@ def main() -> int:
 
     scan = load_detector()
     if scan is not None:
-        return score_with_detector(scan, attacked, clean, manifest)
+        return score_with_detector(attacked, clean, manifest, use_llm=args.llm, jobs=args.jobs)
     return score_baseline(attacked, manifest)
 
 

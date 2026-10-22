@@ -112,6 +112,13 @@ def scan(path: str | Path, use_llm: bool | None = None, use_ocr: bool = False, d
         findings = text_findings(parts, verdicts, renderer, use_ocr=use_ocr)
         findings += offpage_findings(parts, _norm(visible_text))
         classify(findings, visible_text, page_texts, use_llm=use_llm)
+        if parts.repaired:
+            # Added after labelling so it is never sent to the LLM. A damaged file can hide content
+            # that this tool cannot read, so it must not come back as clean.
+            findings.append(Finding("document", "The PDF file is damaged and had to be repaired to open it.",
+                                    ["damaged_pdf"], label="unknown", confidence=0.6,
+                                    explanation="Damaged or truncated file: some content may be missing or "
+                                                "unreadable, so it cannot be confirmed clean. Check the original file."))
     finally:
         renderer.close()
 

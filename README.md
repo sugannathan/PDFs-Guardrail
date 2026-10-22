@@ -155,7 +155,7 @@ python -m pdfguard clean paper.pdf --out paper_clean.txt
 | `--llm` / `--no-llm` | Force the LLM on or off (default: on if configured) |
 | `--quiet`, `--json` | Shorter or machine-readable terminal output |
 
-The exit code of `scan` is `0` (clean), `1` (suspicious) or `2` (dangerous), so it can gate a pipeline or CI job.
+The exit code of `scan` is `0` (clean), `1` (suspicious), `2` (dangerous) or `3` (a file could not be checked: not a PDF, password-protected, missing or without pages), so it can gate a pipeline or CI job. A damaged file that had to be repaired to open is reported as at least suspicious, never clean.
 
 Example terminal output:
 
