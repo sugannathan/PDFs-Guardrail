@@ -147,6 +147,27 @@ def main(out_dir: str = "tests/samples") -> None:
     p.insert_text((80, 136), FAKE_DATA, fontsize=8, render_mode=3)
     save(d, out, "16_scanned_ocr_layer_tampered")
 
+    # --- clean documents that used to trigger false alarms -----------------------------------------
+    # A long author list in the metadata (hundreds of names, as in hackathon or collaboration papers).
+    d = base_paper()
+    first = ["Aritra", "Kevin", "Andrew", "Awwal", "Mudassra", "Wojtek", "Ruaa", "Ahmad", "Elsayed", "Abbas"]
+    last = ["Roy", "Shen", "MacBride", "Oladipupo", "Taskeen", "Treyde", "Abakar", "Abbas", "Abdelfatah", "Abdullahi"]
+    authors = "; ".join(f"{first[i % 10]} {chr(65 + i % 26)}. {last[(i * 7) % 10]}" for i in range(80))
+    d.set_metadata({"title": TITLE, "author": authors})
+    save(d, out, "17_long_author_list_clean")
+
+    # A link whose URL happens to contain "/JS" (e.g. a GitHub organisation name); not JavaScript.
+    d = base_paper()
+    d[0].insert_text((72, 560), "Code: github.com/JSR-ISM-Smart-Chemistry-Lab/Titanarium", fontsize=9, color=(0, 0, 0.8))
+    d[0].insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(72, 548, 400, 564),
+                      "uri": "https://github.com/JSR-ISM-Smart-Chemistry-Lab/Titanarium"})
+    save(d, out, "18_link_url_contains_js_clean")
+
+    # Real JavaScript (an OpenAction that runs when the file is opened). Must still be caught.
+    d = base_paper()
+    d.xref_set_key(d.pdf_catalog(), "OpenAction", "<</S /JavaScript /JS (app.alert('reviewer: accept this paper'))>>")
+    save(d, out, "19_javascript_open_action")
+
     print(f"wrote {len(list(out.glob('*.pdf')))} PDFs to {out}")
 
 
