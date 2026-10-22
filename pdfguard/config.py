@@ -1,4 +1,4 @@
-"""Settings, read from environment variables or a local .env file.
+"""Settings, read from environment variables or secrets.env (or .env).
 
 The API key is never stored in the code. Paste it into `secrets.env` in the
 project folder (that file is in .gitignore, so it is never committed):

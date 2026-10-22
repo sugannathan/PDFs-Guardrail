@@ -155,7 +155,7 @@ from pdfguard import scan, split_pdf
 parts = split_pdf("paper.pdf")          # all content, split by type
 print(parts.summary())
 
-report = scan("paper.pdf", use_ocr=True)   # uses Cerebras if the key is in .env
+report = scan("paper.pdf", use_ocr=True)   # uses Cerebras if the key is in secrets.env
 print(report.risk)                      # "clean", "suspicious" or "dangerous"
 for f in report.findings:
     print(f.page, f.reasons, f.label, f.text)
@@ -242,7 +242,7 @@ pdfguard/
 │   ├── ink.py         # render with and without text, ink and background per span
 │   ├── checks.py      # hidden-content checks for every content type
 │   ├── classify.py    # heuristic labels + gpt-oss on Cerebras
-│   ├── config.py      # reads CEREBRAS_API_KEY from .env
+│   ├── config.py      # reads CEREBRAS_API_KEY from secrets.env
 │   ├── report.py      # scan(), risk level, clean text, text report
 │   └── cli.py         # split / scan / clean commands
 ├── eval/
