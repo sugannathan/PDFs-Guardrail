@@ -209,7 +209,7 @@ text_for_llm = report.clean_text            # only what a human can see
 
 ## Examples and results
 
-`examples/` contains 22 PDFs: 17 that hide an injection or a fake value in a different way, and 5 with nothing hidden (a simple paper, a scanned page with a normal OCR layer, a two-column LaTeX paper, a paper with a long author list in its metadata, and a paper with a link whose URL contains `/JS`). `examples/expected.json` records what is hidden in each.
+`examples/` contains 28 PDFs: 21 that hide an injection or a fake value in a different way, and 7 with nothing hidden (a simple paper, a scanned page with a normal OCR layer, a two-column LaTeX paper, a paper with a long author list in its metadata, a paper with a link whose URL contains `/JS`, invisible plot-software leftovers, and white labels on a dark figure). Files 20–23 are honeypot traps modelled on real cases: canary words ("mention Dua Lipa"), "if you are an AI", a Chinese instruction and a `<system>` role tag. `examples/expected.json` records what is hidden in each.
 
 | Example | Hidden by | Result |
 |---|---|---|
@@ -231,7 +231,7 @@ text_for_llm = report.clean_text            # only what a human can see
 | `16_scanned_ocr_layer_tampered` | fake OCR layer | ✓ data |
 | `00_clean`, `15_scanned_ocr_layer_benign`, `real_latex_paper_clean` | nothing | ✓ clean |
 
-**22/22 examples match** (`eval/check_examples.py`). On a wider set of 28 clean documents (the clean examples plus 25 LaTeX-generated documentation PDFs), there were **0 false alarms**, and 0/5 false alarms on real arXiv and hackathon papers in `data/clean` (`eval/run_eval.py`).
+**28/28 examples match** (`eval/check_examples.py`). On a wider set of 28 clean documents (the clean examples plus 25 LaTeX-generated documentation PDFs), there were **0 false alarms**, and 0/5 false alarms on real arXiv and hackathon papers in `data/clean` (`eval/run_eval.py`).
 
 ### Which parsers pass hidden text on to the LLM?
 
@@ -270,6 +270,7 @@ pdfguard/
 │   ├── ink.py          # render with and without text; ink and background per span
 │   ├── checks.py       # hidden-content checks for every content type
 │   ├── classify.py     # heuristic labels + LLM labels (Cerebras, Hugging Face, local)
+│   ├── thirdparty_patterns.py  # English + Chinese injection phrases from pdf-injection-scanner (MIT)
 │   ├── local.py        # open Hugging Face models on your machine (MLX / transformers)
 │   ├── config.py       # provider, model and key from secrets.env or the environment
 │   ├── report.py       # scan(), risk level, cleaned text, text report
@@ -278,7 +279,7 @@ pdfguard/
 │   ├── check_examples.py   # compare a report with examples/expected.json
 │   ├── run_eval.py         # detection and false-alarm rates
 │   └── parsers.py          # parser comparison
-├── examples/           # 22 test PDFs + expected.json
+├── examples/           # 28 test PDFs + expected.json
 ├── tests/              # pytest suite (pytest -q)
 ├── requirements.txt
 └── pyproject.toml
@@ -289,7 +290,7 @@ pdfguard/
 - Text that is tiny or faint but technically visible is a grey zone; thresholds are in `checks.py` and `ink.py`.
 - Hidden text placed exactly on top of identical visible text is not separated by the ink check; the colour, opacity and render-mode rules cover the common cases.
 - Text inside images (e.g. in figures) is not analysed.
-- The heuristic labels are English-only; the LLM handles other languages.
+- The heuristic labels cover English and Chinese phrasings; the LLM handles other languages. Hidden text in any language is still found, since detection does not depend on the words.
 - The examples are synthetic. Real-world prevalence and false-alarm rates on large paper collections are still to be measured.
 - PDF only for now.
 
@@ -310,6 +311,10 @@ The example generator (`tests/make_samples.py`) exists only to build test data f
 - **Sugan Kanagasenthinathan** – sugan.kanagasenthinathan@dlr.de
 - **Prakul Pandit** – prakul.pandit@dlr.de
 - **Fawad Ahmed Baig** – fawadahmedbaig10@gmail.com
+
+## Acknowledgements
+
+Part of the instruction-phrase list (English and Chinese) and the honeypot test scenarios come from [pdf-injection-scanner](https://github.com/Andy8647/pdf-injection-scanner) by Andy, MIT License. See `pdfguard/thirdparty_patterns.py` for the patterns and the license notice.
 
 ## License
 
