@@ -25,9 +25,16 @@ class Report:
 
     def to_dict(self, include_text: bool = False) -> dict:
         d = {"file": self.file, "risk": self.risk, "counts": self.counts, "parts": self.parts,
-             "findings": [asdict(f) for f in self.findings]}
+             "findings": [self._finding_dict(f) for f in self.findings]}
         if include_text:
             d["clean_text"] = self.clean_text
+        return d
+
+    @staticmethod
+    def _finding_dict(f: Finding) -> dict:
+        d = asdict(f)
+        # "page" is 0-based (PyMuPDF index, for drawing boxes); "page_number" is what a reader sees.
+        d["page_number"] = f.page + 1 if f.page is not None else None
         return d
 
     def to_json(self, include_text: bool = False) -> str:

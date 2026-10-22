@@ -42,6 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--dpi", type=int, default=110)
     c.add_argument("--json", action="store_true", help="print JSON instead of a text summary")
     c.add_argument("--quiet", action="store_true", help="one line per file")
+    c.add_argument("--report", metavar="FILE.json",
+                   help="write ONE JSON file with the results of all scanned PDFs")
+    c.add_argument("--with-text", action="store_true",
+                   help="include the cleaned (visible-only) text of each PDF in --report")
 
     k = sub.add_parser("clean", help="write only the text a human can see")
     k.add_argument("pdf")
@@ -103,15 +107,20 @@ def main(argv: list[str] | None = None) -> int:
     worst = 0
     rank = {"clean": 0, "suspicious": 1, "dangerous": 2}
     summary = []
+    full_reports = []
+    errors = []
     for pdf in _pdfs(args.target):
         try:
             parts = split_pdf(pdf)
             report = scan(pdf, use_llm=args.llm, use_ocr=args.ocr, dpi=args.dpi, parts=parts)
         except Exception as e:
             print(f"[ERR ] {pdf}: {e}", file=sys.stderr)
+            errors.append({"file": str(pdf), "error": str(e)})
             continue
         worst = max(worst, rank[report.risk])
         summary.append({"file": str(pdf), "risk": report.risk, **report.counts})
+        if args.report:
+            full_reports.append(report.to_dict(include_text=args.with_text))
         if args.json:
             print(report.to_json())
         elif args.quiet:
@@ -126,6 +135,27 @@ def main(argv: list[str] | None = None) -> int:
                 write_parts(parts, out / f"{pdf.stem}_parts")
     if args.out and len(summary) > 1:
         (Path(args.out) / "summary.json").write_text(json.dumps(summary, indent=2))
+    if args.report:
+        from datetime import datetime, timezone
+
+        from . import __version__, config
+        totals = {r: sum(x["risk"] == r for x in summary) for r in ("clean", "suspicious", "dangerous")}
+        combined = {
+            "pdfguard_version": __version__,
+            "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "target": str(args.target),
+            "settings": {"ocr": args.ocr, "dpi": args.dpi,
+                         "llm": (config.provider() + ":" + config.model())
+                         if (args.llm if args.llm is not None else config.llm_available()) else None},
+            "totals": {"files": len(summary), **totals, "errors": len(errors)},
+            "summary": summary,
+            "reports": full_reports,
+            "errors": errors,
+        }
+        out_file = Path(args.report)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_text(json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"\nreport for {len(summary)} file(s) written to {out_file}", file=sys.stderr)
     return worst      # exit code: 0 clean, 1 suspicious, 2 dangerous (handy in pipelines/CI)
 
 

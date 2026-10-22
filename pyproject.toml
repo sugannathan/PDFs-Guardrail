@@ -1,6 +1,6 @@
 [project]
 name = "pdfguard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Detects prompt injection and hidden content in scientific PDFs before they reach LLM pipelines."
 requires-python = ">=3.10"
 dependencies = ["pymupdf>=1.24", "numpy", "pillow"]

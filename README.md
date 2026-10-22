@@ -115,6 +115,9 @@ python -m pdfguard split paper.pdf --out parts/ --images
 python -m pdfguard scan paper.pdf
 python -m pdfguard scan data/attacked/ --out reports/ --ocr
 
+# ONE JSON file with the results of every PDF (add --with-text to include the cleaned text)
+python -m pdfguard scan examples/ --ocr --report results/all_examples.json
+
 # also write the split parts next to each report
 python -m pdfguard scan data/attacked/ --out reports/ --split
 
