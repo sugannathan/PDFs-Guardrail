@@ -257,10 +257,27 @@ def _llm_request_uncached(snippet: str, context: str, how_hidden: str = "") -> d
         return {"error": str(e)}
 
 
-def _context_for(f: Finding, page_texts: dict[int, str]) -> str:
-    if f.page is not None and f.page in page_texts:
-        return page_texts[f.page]
-    return page_texts.get(0, "")
+def _context_for(f: Finding, page_texts: dict[int, str], limit: int = 3000) -> str:
+    """Visible text for the LLM: the finding's page, plus lines from anywhere in the
+    document that mention the same units (so a hidden 4.8 eV can be compared with a
+    visible 3.2 eV on another page), plus the start of the document."""
+    page = page_texts.get(f.page, "") if f.page is not None else ""
+    units = {u for _, u in quantities(f.decoded or f.text)}
+    related = []
+    if units:
+        for pno, text in sorted(page_texts.items()):
+            for line in text.splitlines():
+                if line.strip() and line not in page and any(u == lu for _, lu in quantities(line) for u in units):
+                    related.append(f"[page {pno + 1}] {line.strip()}")
+    first = page_texts.get(0, "") if f.page != 0 else ""
+    parts = []
+    if page:
+        parts.append(f"[same page]\n{page}")
+    if related:
+        parts.append("[same units elsewhere in the document]\n" + "\n".join(related[:30]))
+    if first:
+        parts.append(f"[start of document]\n{first[:1000]}")
+    return "\n\n".join(parts)[:limit] or "(no visible text)"
 
 
 def classify(findings: list[Finding], visible_text: str, page_texts: dict[int, str],
@@ -291,11 +308,17 @@ def classify(findings: list[Finding], visible_text: str, page_texts: dict[int, s
         f.details["llm_model"] = config.model()
         f.method = "llm"
         llm_contra = bool(res.get("contradicts_visible", False))
+        code_contra = f.contradicts_visible          # set by the code from actual numbers
+        code_explanation = f.explanation
         if SEVERITY[res["label"]] >= SEVERITY[heur] or heur in ("unknown", "harmless"):
             f.label = res["label"]
             f.confidence = conf
-            f.contradicts_visible = llm_contra or (f.contradicts_visible and res["label"] == "data")
             f.explanation = str(res.get("explanation", ""))[:300]
+            # "contradicts_visible" only means something for hidden values.
+            f.contradicts_visible = f.label == "data" and (llm_contra or code_contra)
+            if f.label == "data" and code_contra and not llm_contra:
+                # The numbers prove a contradiction even if the model missed it.
+                f.explanation = code_explanation
         else:
             # LLM wants to downgrade a dangerous finding: keep it, but show the disagreement.
             f.method = "heuristic+llm_disagrees"
