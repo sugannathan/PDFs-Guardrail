@@ -22,16 +22,18 @@ from .checks import INVISIBLE_RE, Finding, _norm
 INSTRUCTION_PATTERNS = [
     r"\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|earlier|all|any)\b.{0,30}\b(instruction|prompt|rule|direction|context)s?",
     r"\byou are (now )?(an? )?(ai|llm|language model|assistant|chatbot|reviewer|recruiter|grader)\b",
-    r"\b(as|for) (an? )?(ai|llm|large language model|language model|automated)\b",
-    r"\b(give|write|provide|output|return)\b.{0,30}\b(positive|favou?rable|good|glowing|excellent)\b.{0,20}\b(review|feedback|rating|score|assessment|evaluation)",
-    r"\b(rate|score|rank|grade|evaluate)\b.{0,30}\b(this|the)\b.{0,15}\b(paper|manuscript|submission|candidate|applicant|cv|resume|work)\b",
-    r"\b(recommend|suggest)\b.{0,20}\b(accept|acceptance|hiring|hire|approval|interview)\b",
-    r"\b(do not|don't|never)\b.{0,20}\b(mention|highlight|reveal|point out|report|criticize|flag)\b",
-    r"\b(excellent|perfect|ideal|strong) (fit|match|candidate)\b",
+    r"\bas an? (ai|llm|large language model|language model)\b",
+    r"\b(for|to|dear|attention|note to|message to)\b.{0,10}\b(llm|ai|automated|language model)s? (reviewer|grader|screener|assistant|evaluator)s?\b",
+    r"\b(give|write|provide|output|return)\b.{0,30}\b(positive|favou?rable|glowing|excellent)\b.{0,20}\b(review|feedback|rating|assessment|evaluation)",
+    r"\b(rate|score|rank|grade)\b.{0,30}\bthis\b.{0,15}\b(paper|manuscript|submission|candidate|applicant|cv|resume)\b",
+    r"\b(recommend|suggest)\b.{0,20}\b(accepting|acceptance of|accept)\b.{0,15}\b(this|the)\b.{0,10}\b(paper|manuscript|submission|work)\b",
+    r"\b(recommend|suggest)\b.{0,20}\b(hiring|to hire|an interview|for (the|this) (role|position|job))\b",
+    r"\b(do not|don't|never)\b.{0,20}\b(mention|highlight|reveal|point out|criticize)\b.{0,30}\b(weakness|limitation|negative|flaw|shortcoming)s?",
+    r"\b(excellent|perfect|ideal|strong|outstanding) (candidate|applicant|fit for (this|the) (role|position|job))\b",
     r"^\s*(system|assistant|user)\s*:",
-    r"\b(new|updated|additional) instructions?\b",
+    r"\b(new|updated|additional|hidden) instructions? (for|to)\b",
     r"\bprompt\b.{0,20}\b(injection|instruction)",
-    r"\b(llm|ai|chatgpt|gpt|claude|gemini|copilot)s?\b.{0,40}\b(must|should|need to|has to|will)\b",
+    r"\b(llm|chatgpt|gpt|claude|gemini|copilot|language model)s?\b.{0,40}\b(must|should|need to|has to)\b",
 ]
 _INSTR = [re.compile(p, re.IGNORECASE) for p in INSTRUCTION_PATTERNS]
 
@@ -111,6 +113,10 @@ def heuristic_label(f: Finding, visible_text: str, visible_norm: str) -> None:
         return
     if not f.decoded and f.source == "text" and not re.search(r"[A-Za-z]{2}", norm):
         f.label, f.confidence, f.explanation = "harmless", 0.5, "No words, only digits, symbols or accents (e.g. glyph tables)."
+        return
+    if not f.decoded and f.source == "text" and len(norm.split()) <= 8:
+        f.label, f.confidence, f.explanation = "harmless", 0.5, (
+            "Short hidden fragment without instruction or value claim (e.g. figure-software leftovers).")
         return
     if len(norm) < 4 and not f.decoded:
         f.label, f.confidence, f.explanation = "harmless", 0.5, "Very short fragment (e.g. stray characters or spacing)."

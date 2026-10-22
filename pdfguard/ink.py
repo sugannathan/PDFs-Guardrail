@@ -165,13 +165,19 @@ class PageRenderer:
         self._covers[pno] = covers
         return covers
 
+    def covers_after(self, pno: int, bbox, seqno: int) -> list[pymupdf.Rect]:
+        """Opaque rectangles/images painted after the span that overlap it."""
+        inside = pymupdf.Rect(bbox) & self.doc[pno].rect
+        if inside.is_empty:
+            return []
+        return [r for seq, r in self._opaque_covers(pno) if seq > seqno and r.intersects(inside)]
+
     def covered_fraction(self, pno: int, bbox, seqno: int) -> float:
         """Share of the span (inside the page) painted over by opaque shapes/images drawn after it."""
-        page_rect = self.doc[pno].rect
-        inside = pymupdf.Rect(bbox) & page_rect
+        inside = pymupdf.Rect(bbox) & self.doc[pno].rect
         if inside.is_empty or inside.width <= 0 or inside.height <= 0:
             return 0.0
-        later = [r for seq, r in self._opaque_covers(pno) if seq > seqno and r.intersects(inside)]
+        later = self.covers_after(pno, bbox, seqno)
         if not later:
             return 0.0
         # rasterise the span at ~2 cells per point and mark covered cells
@@ -182,6 +188,24 @@ class PageRenderer:
         for r in later:
             mask |= ((ys[:, None] >= r.y0) & (ys[:, None] <= r.y1)) & ((xs[None, :] >= r.x0) & (xs[None, :] <= r.x1))
         return float(mask.mean())
+
+    def ink_under(self, pno: int, bbox, rects, exclude=()) -> InkResult:
+        """Ink check restricted to the part of the span that lies under `rects`.
+
+        If the text still leaves ink where a "covering" shape supposedly is, the shape
+        does not really hide it (transparency group, clipping, blend mode, ...).
+        """
+        span = pymupdf.Rect(bbox) & self.doc[pno].rect
+        if span.is_empty:
+            return InkResult(0, 0, 0, [1.0, 1.0, 1.0], False, False, 0.0)
+        union = None
+        for r in rects:
+            part = pymupdf.Rect(r) & span
+            if not part.is_empty:
+                union = part if union is None else union | part
+        if union is None:
+            return InkResult(0, 0, 0, [1.0, 1.0, 1.0], False, False, 0.0)
+        return self.check(pno, union, exclude=exclude)
 
     def crop_png(self, pno: int, bbox, pad: float = 2.0) -> bytes:
         """The rendered page area of a span, as a reader sees it (for OCR)."""
