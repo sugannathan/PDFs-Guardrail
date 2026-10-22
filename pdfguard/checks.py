@@ -140,7 +140,8 @@ def _union(bboxes) -> list[float]:
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", INVISIBLE_RE.sub("", text).lower()).strip()
+    # Keep letters of every script (Chinese, Greek, accented Latin); drop punctuation and spacing.
+    return re.sub(r"[\W_]+", " ", INVISIBLE_RE.sub("", text).lower()).strip()
 
 
 def _overlaps_image(parts: DocumentParts, page: int, bbox) -> bool:
