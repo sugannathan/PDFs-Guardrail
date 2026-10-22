@@ -204,6 +204,29 @@ def text_findings(parts: DocumentParts, verdicts: list[SpanVerdict], renderer: P
 _XML_TEXT = re.compile(r">([^<>]{3,})<")
 _STANDARD_META = {"title", "author", "creator", "producer", "creationDate", "modDate", "trapped"}
 
+_NAME_PARTICLES = {"van", "von", "de", "der", "den", "da", "di", "du", "la", "le", "del", "al", "bin", "ibn", "el", "y"}
+
+
+def _name_like(chunk: str) -> bool:
+    """'Ø. S. Fjellvåg', 'Ruaa A. E. A. Abakar', 'J. van der Berg' -> True; sentences and numbers -> False."""
+    toks = chunk.replace(".", ". ").split()
+    if not 1 <= len(toks) <= 7 or re.search(r"\d", chunk):
+        return False
+    good = sum(1 for t in toks if t[0].isupper() or t.lower() in _NAME_PARTICLES)
+    return good / len(toks) >= 0.75
+
+
+def looks_like_name_list(text: str) -> bool:
+    """Author lists are often longer than any threshold; they are not hidden content."""
+    chunks = [c.strip() for c in re.split(r"[;,\n]|\band\b", text) if c.strip()]
+    return len(chunks) >= 3 and sum(map(_name_like, chunks)) / len(chunks) >= 0.8
+
+
+def mostly_visible(text: str, visible_norm: str, min_fraction: float = 0.8) -> bool:
+    """True if most words of the text also occur on the pages (e.g. a long title repeated in metadata)."""
+    words = [w for w in _norm(text).split() if len(w) >= 3]
+    return bool(words) and sum(w in visible_norm for w in words) / len(words) >= min_fraction
+
 
 def offpage_findings(parts: DocumentParts, visible_norm: str) -> list[Finding]:
     """Content that is never drawn on the page but that many parsers pass on."""
@@ -219,7 +242,10 @@ def offpage_findings(parts: DocumentParts, visible_norm: str) -> list[Finding]:
             return True
         if _norm(t) and _norm(t) in visible_norm:
             return False
-        return looks_like_instruction(t) or (looks_like_data(t) and len(t) > 25) or len(t) > long_limit
+        if looks_like_instruction(t) or (looks_like_data(t) and len(t) > 25):
+            return True
+        # Long text alone is only suspicious if it is neither an author list nor text the reader sees anyway.
+        return len(t) > long_limit and not looks_like_name_list(t) and not mostly_visible(t, visible_norm)
 
     for key, value in parts.metadata.items():
         value = str(value or "")

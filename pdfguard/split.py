@@ -201,6 +201,18 @@ def _make_span(tr, pno, text, bbox) -> TextSpan:
     )
 
 
+# PDF string literals "(...)" (one level of nesting) and hex strings "<...>"; removed before looking
+# for names so that a URL such as https://github.com/JSR-... inside a /URI string is not mistaken for /JS.
+_PDF_STRING = re.compile(r"\((?:[^()\\]|\\.|\((?:[^()\\]|\\.)*\))*\)|<[0-9A-Fa-f\s]*>")
+_JS_NAME = re.compile(r"/(?:JS|JavaScript)(?=[\s/\[\]<>(){}%]|$)")
+_JS_CODE = re.compile(r"/JS\s*\(((?:[^()\\]|\\.)*)\)")
+
+
+def has_javascript_name(obj: str) -> bool:
+    """True if the object text contains the name /JS or /JavaScript outside of string literals."""
+    return bool(_JS_NAME.search(_PDF_STRING.sub("()", obj)))
+
+
 def _javascript(doc) -> list[str]:
     found = []
     for xref in range(1, doc.xref_length()):
@@ -208,8 +220,9 @@ def _javascript(doc) -> list[str]:
             obj = doc.xref_object(xref, compressed=False)
         except Exception:
             continue
-        if "/JS" in obj or "/JavaScript" in obj:
-            found.append(f"xref {xref}: {obj[:300]}")
+        if has_javascript_name(obj):
+            m = _JS_CODE.search(obj)
+            found.append(f"xref {xref}: {m.group(1)[:300] if m else obj[:300]}")
     return found
 
 

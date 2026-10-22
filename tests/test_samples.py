@@ -27,6 +27,9 @@ EXPECTED = {
     "14_embedded_file": "dangerous",
     "15_scanned_ocr_layer_benign": "clean",
     "16_scanned_ocr_layer_tampered": "dangerous",
+    "17_long_author_list_clean": "clean",
+    "18_link_url_contains_js_clean": "clean",
+    "19_javascript_open_action": "dangerous",
 }
 
 
